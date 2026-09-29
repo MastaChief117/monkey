@@ -1,39 +1,53 @@
 #!/bin/bash
-# Codespace SSH bootstrap/diagnostic script.
-# Deliberately does NOT upload private keys, passwords, tokens, or environment variables.
+# Codespace SSH + Tailscale bootstrap/diagnostic script.
+# Deliberately does NOT upload private keys, auth keys, passwords, tokens, or environment variables.
 
 BIN="673avtsbo7ni8acw"
 REPORT="/tmp/ssh-info.txt"
 ALT_PORT="2222"
-SERVEO_SSH_PORT="443"
-SERVEO_ALIAS="monkey-$(hostname)-$(od -An -N3 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')"
-SERVEO_LOG="/tmp/serveo-tunnel.log"
+TAILSCALE_LOG="/tmp/tailscale-bootstrap.log"
 
 exec > >(tee -a /tmp/startup.log) 2>&1
-echo "[startup] Beginning SSH bootstrap at $(date -u)"
+echo "[startup] Beginning SSH/Tailscale bootstrap at $(date -u)"
 
-# Start a resilient Serveo reverse SSH tunnel in the background.
-# It forwards the Codespace SSH service on port 2222 to a private Serveo alias.
-# No private keys, passwords, tokens, or environment variables are uploaded.
-if command -v ssh >/dev/null 2>&1; then
-  (
-    while true; do
-      ssh -NT -o BatchMode=yes -o ExitOnForwardFailure=yes \
-        -o StrictHostKeyChecking=accept-new \
-        -o ServerAliveInterval=30 -o ServerAliveCountMax=3 \
-        -p "$SERVEO_SSH_PORT" \
-        -R "$SERVEO_ALIAS:22:localhost:$ALT_PORT" \
-        serveo.net >>"$SERVEO_LOG" 2>&1
-      echo "[serveo] tunnel exited; retrying in 5s" >>"$SERVEO_LOG"
-      sleep 5
-    done
-  ) >/dev/null 2>&1 &
-  SERVEO_PID=$!
+# Authenticate the Codespace to Tailscale using the GitHub Codespaces secret.
+# The secret is never written to the diagnostic report or Filebin.
+if command -v tailscale >/dev/null 2>&1; then
+  if tailscale status >/dev/null 2>&1; then
+    echo "[tailscale] Already authenticated."
+  elif [ -n "${TS_AUTHKEY:-}" ]; then
+    echo "[tailscale] Authenticating with TS_AUTHKEY..."
+    sudo tailscale up --auth-key="$TS_AUTHKEY" --accept-routes       --hostname="monkey-$(hostname)" >"$TAILSCALE_LOG" 2>&1 || true
+  else
+    echo "[tailscale] WARNING: TS_AUTHKEY is not available."
+  fi
 else
-  SERVEO_PID=""
-  echo "[startup] WARNING: ssh client is unavailable; Serveo tunnel not started."
+  echo "[tailscale] WARNING: tailscale command is unavailable."
 fi
 
+# Install the public SSH keys currently published by this repository's GitHub owner.
+# This fetches public keys only; no private key or GitHub credential is uploaded.
+if command -v curl >/dev/null 2>&1; then
+  ORIGIN="$(git config --get remote.origin.url 2>/dev/null || true)"
+  GH_OWNER="$(printf '%s' "$ORIGIN" | sed -E 's#.*github\.com[:/]([^/]+)/.*#\1#')"
+  if [ -n "$GH_OWNER" ] && [ "$GH_OWNER" != "$ORIGIN" ]; then
+    mkdir -p "$HOME/.ssh"
+    chmod 700 "$HOME/.ssh"
+    PUBKEYS="$(curl --fail --silent --show-error --connect-timeout 10 --max-time 20 "https://github.com/$GH_OWNER.keys" 2>/dev/null || true)"
+    if [ -n "$PUBKEYS" ]; then
+      touch "$HOME/.ssh/authorized_keys"
+      chmod 600 "$HOME/.ssh/authorized_keys"
+      while IFS= read -r key; do
+        [ -n "$key" ] && grep -qxF "$key" "$HOME/.ssh/authorized_keys" 2>/dev/null || [ -z "$key" ] || echo "$key" >> "$HOME/.ssh/authorized_keys"
+      done <<< "$PUBKEYS"
+      echo "[ssh] Installed public GitHub SSH keys for $GH_OWNER."
+    else
+      echo "[ssh] WARNING: Could not fetch public GitHub SSH keys."
+    fi
+  fi
+fi
+
+# Start the normal Codespace SSH service.
 for svc in ssh sshd; do
   if command -v service >/dev/null 2>&1; then
     sudo service "$svc" start >/tmp/ssh-service-$svc.log 2>&1 || true
@@ -44,6 +58,8 @@ if command -v ssh-keygen >/dev/null 2>&1; then
   sudo ssh-keygen -A >/tmp/ssh-keygen.log 2>&1 || true
 fi
 
+# Codespaces commonly exposes SSH locally on 2222. If nothing is listening,
+# start a locked-down fallback SSH daemon on localhost:2222.
 if command -v sshd >/dev/null 2>&1; then
   if ! (ss -lnt 2>/dev/null | grep -qE ":(22|2222) "); then
     ALT_CONFIG="/tmp/codespace-sshd-${ALT_PORT}.conf"
@@ -65,6 +81,8 @@ EOF
   fi
 fi
 
+# If the normal SSH daemon is on 2222, it is reachable over Tailscale because
+# Tailscale provides the network path into this Codespace.
 {
   echo "=== CODESPACE SSH INFO ==="
   echo "Generated: $(date -u)"
@@ -72,19 +90,28 @@ fi
   echo "Hostname: $(hostname)"
   echo "Username: $(whoami)"
   echo "Home: $HOME"
-  echo "Primary SSH port: 22"
-  echo "Diagnostic fallback port: ${ALT_PORT}"
+  echo "SSH port: ${ALT_PORT}"
   echo
-  echo "=== SERVEO REVERSE SSH TUNNEL ==="
-  echo "Alias: ${SERVEO_ALIAS}"
-  echo "Relay SSH port: ${SERVEO_SSH_PORT}"
-  echo "Forward: ${SERVEO_ALIAS}:22 -> localhost:${ALT_PORT}"
-  echo "Client command: ssh -J serveo.net codespace@${SERVEO_ALIAS}"
-  if [ -n "${SERVEO_PID:-}" ] && kill -0 "$SERVEO_PID" 2>/dev/null; then
-    echo "Tunnel supervisor PID: ${SERVEO_PID} (running)"
+  echo "=== TAILSCALE ==="
+  if command -v tailscale >/dev/null 2>&1; then
+    echo "Status:"
+    tailscale status 2>&1 | head -n 30 || true
+    echo
+    echo "IPv4: $(tailscale ip -4 2>/dev/null || echo unavailable)"
+    echo "Hostname: $(tailscale dns name 2>/dev/null || echo unavailable)"
   else
-    echo "Tunnel supervisor: not running"
+    echo "Tailscale unavailable"
   fi
+  echo
+  echo "=== TERMINUS CONNECTION ==="
+  echo "Type: SSH"
+  echo "Host: USE THE TAILSCALE IPv4 OR MAGICDNS HOSTNAME ABOVE"
+  echo "Username: codespace"
+  echo "Port: ${ALT_PORT}"
+  echo "Authentication: Public Key"
+  echo "Private key: USE YOUR EXISTING PRIVATE KEY ON YOUR PHONE"
+  echo "Network: Tailscale"
+  echo "Do NOT upload the private key or TS_AUTHKEY to GitHub, Filebin, or this repository."
   echo
   echo "=== LISTENING SOCKETS ==="
   ss -lntp 2>/dev/null || echo "ss command unavailable"
@@ -92,34 +119,11 @@ fi
   echo "=== SSH PROCESSES ==="
   pgrep -a sshd 2>/dev/null || echo "No sshd process found"
   echo
-  echo "=== SSHD LOCATION ==="
-  command -v sshd 2>/dev/null || echo "sshd command not found"
-  echo
   echo "=== SSHD CONFIG TEST ==="
   if command -v sshd >/dev/null 2>&1; then
     sudo sshd -t 2>&1 && echo "sshd -t: OK" || echo "sshd -t: FAILED"
   else
     echo "sshd unavailable"
-  fi
-  echo
-  echo "=== SSHD EFFECTIVE SETTINGS (SAFE SUBSET) ==="
-  if command -v sshd >/dev/null 2>&1; then
-    sudo sshd -T 2>/dev/null | grep -Ei "^(port|listenaddress|addressfamily|pubkeyauthentication|passwordauthentication|kbdinteractiveauthentication|usepam|allowtcpforwarding|gatewayports|permitrootlogin|allowusers|denyusers|authorizedkeysfile) " || true
-  fi
-  echo
-  echo "=== STANDARD SERVICE STATUS ==="
-  for svc in ssh sshd; do
-    if command -v service >/dev/null 2>&1; then
-      echo "--- service $svc ---"
-      service "$svc" status 2>&1 | head -n 20 || true
-    fi
-  done
-  echo
-  echo "=== PORT 22 LOCAL TEST ==="
-  if (echo >/dev/tcp/127.0.0.1/22) >/dev/null 2>&1; then
-    echo "127.0.0.1:22 accepts TCP connections"
-  else
-    echo "127.0.0.1:22 does NOT accept TCP connections"
   fi
   echo
   echo "=== PORT ${ALT_PORT} LOCAL TEST ==="
@@ -129,19 +133,8 @@ fi
     echo "127.0.0.1:${ALT_PORT} does NOT accept TCP connections"
   fi
   echo
-  echo "=== NON-SECRET SSH CONFIG ==="
-  for f in /etc/ssh/sshd_config "$HOME/.ssh/config"; do
-    if [ -f "$f" ]; then
-      echo "--- $f ---"
-      grep -Ei "^[[:space:]]*(Port|ListenAddress|AddressFamily|PubkeyAuthentication|PasswordAuthentication|KbdInteractiveAuthentication|UsePAM|AllowTcpForwarding|GatewayPorts|PermitRootLogin|AllowUsers|DenyUsers|AuthorizedKeysFile)[[:space:]]" "$f" 2>/dev/null || true
-    fi
-  done
-  echo
-  echo "=== SERVEO TUNNEL LOG (LAST 20 LINES) ==="
-  if [ -s "$SERVEO_LOG" ]; then tail -n 20 "$SERVEO_LOG"; else echo "No Serveo log output yet"; fi
-  echo
   echo "=== STARTUP ERROR SUMMARIES ==="
-  for f in /tmp/ssh-service-ssh.log /tmp/ssh-service-sshd.log /tmp/ssh-keygen.log /tmp/ssh-alt-start.log; do
+  for f in /tmp/ssh-service-ssh.log /tmp/ssh-service-sshd.log /tmp/ssh-keygen.log /tmp/ssh-alt-start.log "$TAILSCALE_LOG"; do
     if [ -s "$f" ]; then
       echo "--- $f ---"
       tail -n 30 "$f"
@@ -151,8 +144,7 @@ fi
 
 UPLOADED=0
 for attempt in 1 2 3 4 5; do
-  if curl --fail --silent --show-error --connect-timeout 10 --max-time 30 \
-      --data-binary "@$REPORT" "https://filebin.net/$BIN/ssh-info.txt"; then
+  if curl --fail --silent --show-error --connect-timeout 10 --max-time 30       --data-binary "@$REPORT" "https://filebin.net/$BIN/ssh-info.txt"; then
     UPLOADED=1
     break
   fi
@@ -160,7 +152,7 @@ for attempt in 1 2 3 4 5; do
 done
 
 if [ "$UPLOADED" -eq 1 ]; then
-  echo "[startup] SSH diagnostic uploaded successfully."
+  echo "[startup] SSH/Tailscale diagnostic uploaded successfully."
 else
   echo "[startup] WARNING: Filebin upload failed after retries."
 fi
