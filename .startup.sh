@@ -79,7 +79,20 @@ fi
   echo "Alias: ${SERVEO_ALIAS}"
   echo "Relay SSH port: ${SERVEO_SSH_PORT}"
   echo "Forward: ${SERVEO_ALIAS}:22 -> localhost:${ALT_PORT}"
-  echo "Client command: ssh -J serveo.net codespace@${SERVEO_ALIAS}"
+  echo "OpenSSH jump command: ssh -J serveo.net codespace@${SERVEO_ALIAS}"
+  echo
+  echo "=== TERMINUS CONNECTION ==="
+  echo "Connection type: SSH"
+  echo "Host: ${SERVEO_ALIAS}"
+  echo "Username: codespace"
+  echo "Port: 22"
+  echo "Authentication: Public Key"
+  echo "Private key: USE YOUR EXISTING PRIVATE KEY ON YOUR PHONE"
+  echo "Jump host: serveo.net"
+  echo "Jump host port: ${SERVEO_SSH_PORT}"
+  echo "Jump host protocol: SSH"
+  echo "If Terminus has separate ProxyJump/Jump Host fields, use the values above."
+  echo "Do NOT upload the private key to GitHub, Filebin, or this repository."
   if [ -n "${SERVEO_PID:-}" ] && kill -0 "$SERVEO_PID" 2>/dev/null; then
     echo "Tunnel supervisor PID: ${SERVEO_PID} (running)"
   else
