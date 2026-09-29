@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-BIN="PUT-YOUR-FILEBIN-NAME-HERE"
+BIN="673avtsbo7ni8acw"
 REPORT="/tmp/ssh-info.txt"
 
 {
