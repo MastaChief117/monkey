@@ -1,10 +1,4 @@
 {
   "name": "Monkey Codespace",
-  "runArgs": [
-    "--device=/dev/net/tun"
-  ],
-  "features": {
-    "ghcr.io/tailscale/codespace/tailscale": {}
-  },
   "postCreateCommand": "bash .startup.sh"
 }
