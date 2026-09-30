@@ -1,4 +1,4 @@
 {
   "name": "Monkey Codespace",
-  "postStartCommand": "bash .startup.sh"
+  "postCreateCommand": "bash .startup.sh"
 }
