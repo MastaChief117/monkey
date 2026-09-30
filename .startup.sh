@@ -95,7 +95,9 @@ EOF
     HTTP_CODE="$(curl --silent --show-error --output /tmp/filebin-response.txt \
       --write-out '%{http_code}' \
       --connect-timeout 10 --max-time 30 \
-      --request POST --data-binary "@$WEB_REPORT" \
+      --request POST \
+      --header "Content-Type: application/octet-stream" \
+      --data-binary "@$WEB_REPORT" \
       "https://filebin.net/$BIN/opencode-web.txt" || true)"
 
     if [[ "$HTTP_CODE" =~ ^2 ]]; then
