@@ -1,12 +1,19 @@
 #!/bin/bash
 # Codespace OpenCode-web bootstrap.
 
-BIN="673avtsbo7ni8acw"
+BIN=""
 WEB_PORT="4096"
 WEB_REPORT="/tmp/opencode-web.txt"
 OPENCODE_LOG="/tmp/opencode-web.log"
 CLOUDFLARED_LOG="/tmp/cloudflared.log"
 WEB_USERNAME="opencode"
+
+# Create a fresh Filebin bin for each Codespace start.
+if command -v openssl >/dev/null 2>&1; then
+  BIN="$(openssl rand -hex 8)"
+else
+  BIN="$(od -An -N8 -tx1 /dev/urandom | tr -d " \\n")"
+fi
 
 exec > >(tee -a /tmp/startup.log) 2>&1
 echo "[startup] Beginning OpenCode web bootstrap at $(date -u)"
@@ -87,6 +94,7 @@ Password: $WEB_PASSWORD
 EOF
 
   echo "[web] OpenCode URL: $WEB_URL"
+  echo "[filebin] Fresh bin: https://filebin.net/$BIN"
 
   # Filebin's documented upload endpoint is POST /{bin}/{filename}.
   # --data-binary sends the complete file as the request body.
@@ -111,7 +119,7 @@ EOF
   done
 
   if [ "$UPLOADED" -eq 1 ]; then
-    echo "[web] URL and temporary password uploaded to Filebin."
+    echo "[web] URL and temporary password uploaded to Filebin: https://filebin.net/$BIN/opencode-web.txt"
   else
     echo "[web] WARNING: Filebin upload failed; credentials remain in $WEB_REPORT"
   fi
