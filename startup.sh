@@ -6,7 +6,7 @@ mkdir -p "$STATE"
 exec > >(tee -a "$STATE/startup.log") 2>&1
 
 WEB_PORT=7681
-SSH_PORT=2222
+SSH_PORT=2223
 WEB_USER=monkey
 WEB_PASSWORD_FILE="$STATE/password"
 WEB_REPORT="$STATE/web-terminal.txt"
