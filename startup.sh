@@ -40,6 +40,36 @@ install_bin(){
   sudo -n mv "/tmp/$n" "$d"
 }
 
+# ---------- persistent bashrc hook ----------
+# Install a tiny launcher so future interactive shells can recover the services
+# without relying on devcontainer postStartCommand.
+BASHRC="$HOME/.bashrc"
+HOOK="$HOME/.monkey-autostart.sh"
+cat >"$HOOK" <<'MONKEY_HOOK'
+#!/usr/bin/env bash
+set -u
+STATE="/tmp/monkey-bootstrap"
+mkdir -p "$STATE"
+# Atomic lock: many shells may start at once, but only one bootstrap runs.
+if ! mkdir "$STATE/bootstrap.lock" 2>/dev/null; then
+  exit 0
+fi
+trap 'rmdir "$STATE/bootstrap.lock" 2>/dev/null || true' EXIT
+exec bash /workspaces/monkey/startup.sh --service-only
+MONKEY_HOOK
+chmod 700 "$HOOK"
+if [ -f "$BASHRC" ] && ! grep -Fq '# >>> MONKEY AUTO START >>>' "$BASHRC"; then
+  cat >>"$BASHRC" <<'MONKEY_BASHRC'
+
+# >>> MONKEY AUTO START >>>
+if [ -f "$HOME/.monkey-autostart.sh" ] && [ -z "${MONKEY_BOOTSTRAPPING:-}" ]; then
+  export MONKEY_BOOTSTRAPPING=1
+  nohup "$HOME/.monkey-autostart.sh" >/dev/null 2>&1 &
+fi
+# <<< MONKEY AUTO START <<<
+MONKEY_BASHRC
+fi
+
 echo "===== MONKEY STARTUP $(date -u) ====="
 
 if [ -s "$WEB_PASSWORD_FILE" ]; then
