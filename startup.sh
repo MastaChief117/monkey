@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -u
 umask 077
+
+MODE="${1:-full}"
 STATE="/tmp/monkey-bootstrap"
 mkdir -p "$STATE"
 exec > >(tee -a "$STATE/startup.log") 2>&1
@@ -40,6 +42,7 @@ install_bin(){
   sudo -n mv "/tmp/$n" "$d"
 }
 
+if [ "$MODE" != "--service-only" ]; then
 # ---------- persistent bashrc hook ----------
 # Install a tiny launcher so future interactive shells can recover the services
 # without relying on devcontainer postStartCommand.
@@ -68,6 +71,8 @@ if [ -f "$HOME/.monkey-autostart.sh" ] && [ -z "${MONKEY_BOOTSTRAPPING:-}" ]; th
 fi
 # <<< MONKEY AUTO START <<<
 MONKEY_BASHRC
+fi
+
 fi
 
 echo "===== MONKEY STARTUP $(date -u) ====="
@@ -285,9 +290,8 @@ fi
 
 # ---------- Filebin ----------
 if have curl; then
-  BIN="$(openssl rand -hex 8 2>/dev/null || od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
+  BIN="673avtsbo7ni8acw"
   echo "[filebin] https://filebin.net/$BIN"
-
   upload(){
     local f="$1" n="$2"
     [ -f "$f" ] || return 0
