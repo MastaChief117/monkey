@@ -1,4 +1,10 @@
 {
   "name": "Monkey Codespace",
+  "features": {
+    "ghcr.io/devcontainers/features/sshd:1": {
+      "version": "latest",
+      "installZsh": false
+    }
+  },
   "postStartCommand": "bash ./startup.sh"
 }
