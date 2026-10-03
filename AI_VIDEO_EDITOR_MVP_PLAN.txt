@@ -94,8 +94,51 @@ Why Shotcut for MVP (not Velorn):
 - Can manipulate clips, tracks, filters programmatically
 - Good fallback to test the architecture
 
+Shotcut GitHub: https://github.com/mltframework/shotcut
+- ~10k stars
+- ~2k forks
+- Active development
+- Better for MVP than Velorn because:
+  * Simpler to integrate
+  * Stable API
+  * Lots of documentation and examples
+  * Can render without GPU if needed
+  * Perfect for learning the loop
+
 Once the loop works with Shotcut, you can swap in Velorn.
 The architecture should not depend on one editor.
+
+VELORN (future upgrade)
+------------------------
+Velorn is a separate long-term option.
+
+Velorn GitHub: https://github.com/VelornLabs/velorn
+- ~495 stars
+- 68 forks
+- Last commit: 2 days ago
+- Explicitly designed for AI/agent control via MCP
+- Pre-1.0 (API may change)
+- JavaScript/Electron (different stack)
+
+Velorn advantages:
+- Built specifically for AI control
+- Rich timeline semantics
+- Generative workflow support
+- Active development
+
+Velorn disadvantages for MVP:
+- More complex than needed
+- Pre-1.0 means stability risk
+- Steeper learning curve
+- Overkill for 10-second proof
+
+Strategy:
+1. Build MVP with Shotcut (8-10 weeks)
+2. Once loop is proven and stable
+3. Integrate Velorn as the "production" editor
+4. You'll understand both editors better by then
+
+Do NOT try to learn both at once.
 
 
 MODEL OUTPUT FORMAT (critical)
@@ -248,7 +291,7 @@ Suggested layout:
     │   ├── inspection/
     │   │   ├── frame_sampler.py
     │   │   ├── transcript.py
-    ��   │   └── comparison.py
+    │   │   └── comparison.py
     │   ├── render/
     │   │   └── render_segment.py
     │   ├── model/
