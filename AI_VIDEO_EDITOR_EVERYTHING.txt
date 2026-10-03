@@ -1,0 +1,2680 @@
+
+AI VIDEO EDITOR — EVERYTHING DUMP
+=================================
+
+PURPOSE
+-------
+This file is the consolidated project-memory dump for the personal AI video editor project developed across the conversation history and the retained project context.
+
+IMPORTANT SCOPE NOTE
+--------------------
+This is a reconstruction of the project's complete known design context from the conversation and remembered project state. It is not a byte-for-byte transcript of every chat message, and it intentionally excludes unrelated private/account/location information. It preserves the project's ideas, decisions, discarded approaches, constraints, architecture, research conclusions, open questions, and implementation details.
+
+The project is a personal, experimental, garage/basement-scale AI video editing system. It is not intended as a SaaS product or enterprise platform. It should be practical, surprisingly capable, and built around free/low-cost compute where possible.
+
+================================================================================
+1. THE CORE IDEA
+================================================================================
+
+The AI video editor is an agent that takes a script and media, performs real editing operations, renders short sections, watches what it actually produced, compares reality against the intended script, fixes mistakes, and continues until the whole video is complete.
+
+The fundamental loop is:
+
+    READ SCRIPT
+        ->
+    PLAN/EDIT A SHORT SEGMENT
+        ->
+    RENDER THE SEGMENT
+        ->
+    WATCH / INSPECT THE RENDERED RESULT
+        ->
+    TRANSCRIBE / UNDERSTAND WHAT ACTUALLY HAPPENED
+        ->
+    COMPARE INTENDED VS ACTUAL
+        ->
+    DETECT DISCREPANCIES
+        ->
+    FIX THE TIMELINE / EDIT
+        ->
+    CONTINUE
+
+The latest preferred chunk size is roughly 8 seconds of video.
+
+The next 8-second segment should have about 3 seconds of immediately preceding rendered context so continuity is maintained.
+
+The AI is explicitly NOT supposed to blindly trust its own plan.
+
+The central philosophy is:
+
+    PLAN -> CREATE -> OBSERVE -> COMPARE -> CORRECT -> CONTINUE
+
+This is the heart of the project.
+
+The system should be able to stop and ask the user for help when it genuinely cannot resolve something rather than inventing a confident answer or silently producing bad video.
+
+
+================================================================================
+2. WHY THE DESIGN EVOLVED
+================================================================================
+
+The project started from a more GUI-oriented concept where an AI could operate a video editor by using computer-use / keyboard / mouse actions.
+
+That approach was reconsidered.
+
+The important realization was:
+
+A GUI viewport is expensive and unnecessary for the normal operating loop.
+
+The editor is rendering every short segment anyway. The agent does not need to continuously stare at an interactive viewport like a human editor would. If the editor exposes a rich project/timeline API, deterministic timeline operations can be issued directly.
+
+This led to the API-FIRST design.
+
+The revised principle is:
+
+    AI
+     |
+     v
+    Editor API / MCP
+     |
+     v
+    Actual NLE project + timeline
+     |
+     v
+    Render
+     |
+     v
+    AI observes rendered result
+
+The GUI is not the main control surface anymore.
+
+Computer-use can still exist as a fallback/debug mechanism for unusual unsupported operations, dialogs, or emergency interaction, but it is not intended to be the primary control path.
+
+The project specifically does NOT want FFmpeg to be treated as the entire editor abstraction.
+
+FFmpeg can still be part of the underlying media/rendering pipeline where appropriate, but the AI should control a real editor/project representation with real editing semantics.
+
+Desired semantics include clips, tracks, trims, splits, transitions, transforms, keyframes, audio, captions, effects, markers, project state, and rendering.
+
+
+================================================================================
+3. WHAT THE AI SHOULD ACTUALLY CONTROL
+================================================================================
+
+The ideal editor abstraction should let the AI do almost everything a human editor could reasonably do through the normal editor interface.
+
+Desired operations include, at minimum:
+
+- Create / import media assets
+- Add clips to tracks
+- Remove clips
+- Move clips
+- Trim clips
+- Split / razor clips
+- Change in/out points
+- Resize visual layers
+- Reposition / transform clips
+- Multi-track editing
+- Audio tracks
+- Volume changes
+- Audio fades
+- Video fades
+- Transitions
+- Visual effects
+- Filters
+- Keyframes
+- Speed changes
+- Retiming
+- Text / titles
+- Captions / subtitles
+- Markers
+- Timeline inspection
+- Project inspection
+- Asset inspection
+- Render/export
+- Reading the current timeline/project state
+- Rendering short sections for review
+- Applying corrections after review
+
+The phrase “almost everything” matters more than literal 100 percent coverage.
+
+The editor is valuable because it exposes a rich internal representation the model can manipulate, not merely because it can export a video.
+
+
+================================================================================
+4. CURRENT PRIMARY EDITOR: VELORN
+================================================================================
+
+The current selected editor target is VELORN.
+
+Other candidates were investigated, but Velorn became the preferred target because it is designed around agent/editor integration and exposes an MCP layer.
+
+Key project-level research findings about Velorn from the time it was investigated:
+
+- It is a real non-linear editor / video editing system.
+- It has an MCP layer intended for agent control.
+- Its MCP system exposes a large tool surface (documentation discussed roughly 125 MCP tools).
+- It can expose the current project and active timeline.
+- It includes asset/timeline editing operations.
+- It has caption-related operations.
+- It has export/render operations.
+- It has visual inspection/workflow/generation related capabilities.
+- It is open source / GPL-3.0.
+- It was pre-1.0 and actively developing when checked, so API stability should be treated as an engineering risk.
+- A late-September 2026 release discussed hardware-assisted background media preparation using NVIDIA NVENC and Apple VideoToolbox, with CPU fallback.
+
+The specific repository and release numbers checked at that time were approximately:
+- ~494 GitHub stars
+- ~67 forks
+- ~21 open issues
+- ~6 open PRs
+- v0.3.36
+- ~421 commits
+
+Those numbers are historical snapshots, not permanent facts.
+
+The important reason for choosing Velorn is architecture:
+it offers a real editor/project model while also exposing an MCP path designed for an AI agent.
+
+The project should keep a mature alternative as a fallback/benchmark.
+
+
+================================================================================
+5. ALTERNATIVE EDITOR RESEARCH
+================================================================================
+
+SHOTCUT
+-------
+Shotcut was investigated as a strong mature fallback.
+
+Important findings:
+- Free and open source.
+- Multitrack timeline model.
+- QML API exposes internal editor/project state.
+- Can manipulate producers/clips and timeline structures.
+- Supports markers, subtitles, filters, keyframes, fades, speed, transitions, etc.
+- Mature enough to be a realistic reference implementation / fallback.
+
+Shotcut is important because it demonstrates that a mature desktop NLE can expose a meaningful internal model even if the API is not as agent-first as Velorn.
+
+BLENDER VSE
+----------
+Blender's Video Sequence Editor was investigated as the highly programmable alternative.
+
+Strengths:
+- Python API.
+- Headless operation is possible.
+- Rich sequencer data model.
+- Programmatic strip creation, movement, splitting, retiming, transitions, effects, text, audio and keyframes.
+- Can render without requiring a human to sit in front of a viewport.
+
+Weakness:
+It is a general 3D application rather than a conventional NLE, so the editing workflow and user-facing semantics are different.
+
+WEFTCUT
+-------
+An AI-native editor with MCP-style operations was found.
+Discussed operation categories included placing, trimming, splitting, restyling, keyframing, grouping, captioning, mixing and checkpoints.
+Interesting, but early.
+
+KINEWRIGHT
+----------
+Another agentic editor concept with MCP-driven operations.
+Interesting but early in development.
+
+ORCCUT
+-------
+Discussed as an MCP-oriented editor exposing roughly dozens of timeline operations including trim, split, move, resize, transforms, keyframes, transitions and color operations.
+Very young.
+
+FRONTSTAGE
+----------
+Investigated as an MCP/editor stack with multi-track editing, ripple editing, razor/splitting, linked audio/video, keyframes, transforms, crop, volume, color, transitions, captions, transcription and export.
+
+KDENLIVE
+--------
+Interesting because of its MLT-backed project representation and third-party API experiments.
+The project representation itself can be manipulated, but the official scripting/API situation was less straightforward than the desired agent-first experience.
+
+DAVINCI RESOLVE
+---------------
+Excellent editor, but the official scripting/automation setup was tied to Studio in the relevant context, which conflicts with the project's zero-cost/free-compute goal.
+
+Conclusion from the search:
+Velorn is the current primary target.
+Shotcut is the mature fallback/benchmark.
+Blender VSE is the programmable alternative if the project needs a nuclear-option programmable editor.
+
+
+================================================================================
+6. TARGET SYSTEM ARCHITECTURE
+================================================================================
+
+The preferred architecture is distributed:
+
+    +------------------------------+
+    |        AI AGENT / MODEL      |
+    |  video + audio + script      |
+    |  project state + tools       |
+    +---------------+--------------+
+                    |
+                    | MCP/tool calls
+                    v
+    +------------------------------+
+    |           VELORN             |
+    |  real project + timeline    |
+    |  assets + effects + audio   |
+    +---------------+--------------+
+                    |
+                    | render ~8 sec
+                    v
+    +------------------------------+
+    |      RENDERED RESULT         |
+    +---------------+--------------+
+                    |
+                    | frames/audio/transcript
+                    v
+    +------------------------------+
+    |       OBSERVATION AI         |
+    | intended vs actual compare   |
+    +---------------+--------------+
+                    |
+                    +------ correction -----> Velorn
+
+The model and the editor may run in separate compute environments.
+
+
+================================================================================
+7. KAGGLE + COLAB SPLIT
+================================================================================
+
+The working idea is:
+
+KAGGLE:
+- Host the AI model.
+- Train/fine-tune the model.
+- Perform inference / analysis.
+- Potentially perform video understanding workloads.
+
+COLAB:
+- Host Velorn and its rendering environment.
+- Run the editor/project.
+- Render the short video sections.
+
+CONNECTIVITY:
+- MCP server between the agent and editor.
+- Cloudflare tunnel can expose the editor-side MCP service where needed.
+
+The key realization is that this does NOT require a live GUI stream.
+
+Only structured commands and relatively small review outputs need to cross the connection:
+- MCP tool calls
+- project/timeline state
+- metadata
+- short rendered sections / sampled frames
+- transcripts / analysis information
+
+Latency therefore matters less than it would in interactive remote desktop control.
+
+The real practical risks to test are:
+- free-tier runtime limits
+- session resets
+- inbound tunnel reliability
+- whether the editor/desktop environment runs correctly in the cloud runtime
+- GPU driver availability
+- hardware encoding availability
+- storage persistence
+- network throughput when actual video chunks are transferred
+
+The architecture should therefore be checkpointed and restartable.
+
+
+================================================================================
+8. TARGET GPU SETUP
+================================================================================
+
+A target setup discussed was:
+
+    2 x NVIDIA Tesla T4
+
+Each T4 is 16 GB VRAM.
+
+Important:
+Two T4s are NOT automatically one unified 32 GB VRAM pool.
+
+A sensible division is:
+
+T4 #1:
+- AI inference
+- video understanding
+- model workload
+
+T4 #2:
+- Velorn rendering
+- video processing
+- potentially another model or secondary workload
+
+The exact allocation may change depending on runtime behavior.
+
+The project target is 720p30.
+
+720p30 means:
+- resolution: 1280 x 720
+- frame rate: 30 fps
+- 8-second segment: 240 frames
+
+720p30 is a sensible prototype target.
+
+The editor's rendering of already existing/generative media is generally far less expensive than generating every pixel of a video from scratch.
+
+
+================================================================================
+9. MODEL DIRECTION
+================================================================================
+
+The currently stated model choice is:
+
+    SmolVLM 2.2B
+
+The goal is to fine-tune an actual multimodal/video-capable model rather than build the editor around text-only prompting.
+
+The model should be able to consume some combination of:
+
+- script text
+- visual frames
+- audio/transcript information
+- current timeline/project state
+- available assets
+- tool schemas
+- prior decisions
+- previous rendered context
+
+and then produce:
+
+- structured reasoning/state
+- editing actions / tool calls
+- critiques
+- corrections
+
+The model does not need spoken voice output for the sense of “speaking” discussed in the project. “Speaking” in this context means producing meaningful structured actions, decisions, and tool calls as a multimodal agent.
+
+
+================================================================================
+10. MODEL-SIZE / TRAINING FEASIBILITY THINKING
+================================================================================
+
+Several models were considered during exploration:
+
+- MiniCPM-V 4.0 (~4.1B)
+- InternVL2.5-4B (~3.7B)
+- Qwen2.5-VL-3B (~3.8B)
+- InternVL2.5-2B (~2B)
+- MiniCPM-V 4.6 (~1.3B)
+- InternVL2.5-1B (~1B)
+- SmolVLM 2.2B (current stated target)
+
+The constraint is that large models are harder to fine-tune on free hardware.
+
+The practical direction is parameter-efficient fine-tuning and careful sequence/frame budgeting rather than attempting a giant full-parameter training run.
+
+The exact training method, quantization, context length, frame budget, batch size, gradient accumulation, and checkpointing should be tested empirically on the actual available GPU environment.
+
+
+================================================================================
+11. TRAINING DOES NOT MEAN “MEMORY”
+================================================================================
+
+An important distinction established in the project:
+
+Fine-tuning teaches behavior.
+
+Persistent memory stores project-specific state.
+
+These are different systems.
+
+FINE-TUNING SHOULD TEACH:
+- tool usage
+- Velorn/editor knowledge
+- editing concepts
+- style patterns
+- raw footage interpretation
+- self-critique behavior
+- action selection
+
+PERSISTENT PROJECT CONTEXT SHOULD STORE:
+- script facts
+- story facts
+- style requirements
+- important user preferences
+- asset references
+- current timeline facts
+- project decisions
+- constraints
+- prior corrections
+- unresolved questions
+
+The model should not need to rediscover all project facts every few seconds.
+
+
+================================================================================
+12. TRAINING DATA STRATEGY
+================================================================================
+
+The dataset should teach several layers.
+
+LAYER A — GENERIC TOOL USE
+--------------------------
+Generic tool-calling/function-calling datasets can provide basic syntax and action-selection behavior.
+
+Examples discussed:
+- Mustafaege/qwen3.5-toolcalling-v1 (~51k examples)
+- NousResearch/hermes-function-calling-v1
+- zhangdw/to-tool-call-datasets (~245k harmonized examples)
+
+These are bootstrap sources.
+
+They are NOT sufficient as the actual video-editing dataset.
+
+LAYER B — VELORN / EDITOR KNOWLEDGE
+-----------------------------------
+Instead of trying to teach the AI to click around a GUI, the project moved toward feeding it the complete available Velorn documentation and tool schemas.
+
+Docs teach:
+    HOW to control the editor.
+
+Example editing videos teach:
+    WHAT editing decisions to make and WHEN to make them.
+
+This is much more efficient for an API-first architecture.
+
+LAYER C — USER'S REFERENCE VIDEOS
+---------------------------------
+The project includes roughly 50 example/reference videos as a target style set.
+
+These should teach:
+- pacing
+- cut rhythm
+- use of sound effects
+- visual emphasis
+- joke timing
+- captions
+- zooms
+- transitions
+- music behavior
+- when to hold shots
+- when to cut
+- how assets are used
+- overall editing personality/style
+
+The examples are not merely files to copy.
+They are behavior/style references.
+
+LAYER D — RAW FOOTAGE
+---------------------
+Raw footage examples should teach:
+- what visual events mean
+- usable moments
+- spoken words
+- reactions
+- scene structure
+- objects
+- continuity
+- important timestamps
+- awkward moments / dead time
+- cut candidates
+
+LAYER E — COMBINED TASKS
+------------------------
+The most important eventual dataset is combined:
+    script + raw footage + assets + timeline state + style examples -> editing actions
+
+LAYER F — SELF-CRITIQUE
+-----------------------
+Examples should include:
+    intended result
+    actual result
+    discrepancy
+    correction
+
+The model must learn that its own first action is not guaranteed to be correct.
+
+
+================================================================================
+13. “TEACH THE EDITOR” VS “TEACH EDITING”
+================================================================================
+
+This distinction was explicitly important.
+
+VELORN DOCUMENTATION / TOOL SCHEMAS:
+    teach HOW.
+
+REFERENCE VIDEOS:
+    teach WHAT and WHEN.
+
+RAW FOOTAGE:
+    teaches WHAT IS ACTUALLY AVAILABLE.
+
+SCRIPT:
+    defines WHAT THE VIDEO IS SUPPOSED TO SAY / SHOW.
+
+RENDERED OUTPUT:
+    establishes WHAT THE SYSTEM ACTUALLY PRODUCED.
+
+SELF-CRITIQUE:
+    closes the gap between those things.
+
+
+================================================================================
+14. THE 8-SECOND EDIT / RENDER LOOP
+================================================================================
+
+The latest core local loop is around 8 seconds.
+
+For each segment:
+
+1. Read the relevant script section.
+2. Read persistent project context.
+3. Read available timeline state.
+4. Read the relevant raw media/assets.
+5. Read approximately 3 seconds of preceding rendered context.
+6. Decide what should happen.
+7. Apply edits through Velorn/MCP.
+8. Render the ~8-second result.
+9. Sample/inspect the result.
+10. Transcribe/understand the audio.
+11. Determine what actually happened.
+12. Compare the actual result against the intended result.
+13. Record discrepancies.
+14. Apply corrections if necessary.
+15. Accept the segment.
+16. Move to the next section.
+
+The AI should be capable of multiple correction passes.
+
+The project should not assume “first render = final render.”
+
+
+================================================================================
+15. PREVIOUS 3 SECONDS OF CONTEXT
+================================================================================
+
+The previous 3 seconds are there for continuity.
+
+They help with:
+- visual continuity
+- dialogue continuity
+- joke setup/punchline timing
+- music continuity
+- reaction continuity
+- motion continuity
+- transition continuity
+- ensuring a cut does not accidentally destroy an ongoing action
+
+This is immediate context, not full project memory.
+
+The rest of the project's important state should be represented in persistent context.
+
+
+================================================================================
+16. FRAME SAMPLING / OBSERVATION
+================================================================================
+
+Several sampling ideas were explored.
+
+One major idea was around:
+    1 frame every 0.5 seconds
+which is 2 FPS.
+
+For a long video this drastically reduces the raw number of visual observations compared with processing every frame.
+
+Earlier experiments also considered:
+- 5-second chunks
+- 20 frames per 5 seconds
+which corresponds to 4 FPS for that local window.
+
+The later architecture settled on:
+- ~8-second generation/render chunk
+- ~3 seconds of previous rendered context
+- ~2 FPS as a useful baseline observation rate
+- denser sampling where necessary
+
+The model should not be forced to use a single fixed frame rate for every situation.
+
+Examples where denser sampling may be useful:
+- fast motion
+- rapid cuts
+- small visual text
+- a critical transition
+- visual effects
+- lip-synced events
+- a short visual joke
+
+The observation pipeline should be adaptive if possible.
+
+
+================================================================================
+17. 5-SECOND / MICRO / LOCAL / MACRO CONCEPT
+================================================================================
+
+An earlier architecture used three conceptual layers.
+
+MICRO
+-----
+Approximately 0.5-second observations for event awareness.
+
+LOCAL
+-----
+Approximately 5-second analysis/editing windows.
+
+MACRO
+-----
+Full-video contextual review.
+
+Even though the current production chunk is closer to 8 seconds, the conceptual three-layer model remains useful:
+
+MICRO:
+    What is happening right now?
+
+LOCAL:
+    What should this short section do?
+
+MACRO:
+    Does the whole video make sense together?
+
+The project should NOT treat chunks as fully independent.
+
+Overlap/context is required because:
+- jokes can span boundaries
+- dialogue can span boundaries
+- music can span boundaries
+- visual actions can span boundaries
+- transitions can span boundaries
+
+
+================================================================================
+18. FULL VIDEO / MACRO REVIEW
+================================================================================
+
+After local editing, the system can perform a full-video review.
+
+The macro pass should identify:
+- pacing problems
+- repeated shots
+- continuity problems
+- missing story beats
+- weak transitions
+- bad caption timing
+- audio balance problems
+- overuse of effects
+- style inconsistencies
+- dead time
+- abrupt topic changes
+- moments where local editing decisions cause a global problem
+
+The macro reviewer can return timestamps and corrections to the local editor.
+
+This creates a hierarchical workflow:
+
+    MICRO observation
+       ->
+    LOCAL edit/render
+       ->
+    MACRO review
+       ->
+    LOCAL correction
+
+
+================================================================================
+19. PLAN VS REALITY STATE
+================================================================================
+
+A simple persistent state format was designed conceptually:
+
+    intended:
+        what the script / plan says should happen
+
+    actual:
+        what the rendered result actually contains
+
+    discrepancy:
+        what went wrong / what is missing / what is weak
+
+    correction:
+        what the next edit should change
+
+Example:
+
+    intended:
+        punchline happens at ~3.0s and reaction cut immediately follows
+
+    actual:
+        setup shot continues until ~4.2s and reaction appears too late
+
+    discrepancy:
+        pacing is late by ~1.2s
+
+    correction:
+        trim setup, move reaction earlier, rerender
+
+The important property is that the model explicitly reasons from observed reality rather than hallucinating that its edit succeeded.
+
+
+================================================================================
+20. SCRIPT REPRESENTATION
+================================================================================
+
+The script is not merely a prompt.
+
+It should be treated as an authoritative source of intended content.
+
+The project can derive:
+- scene/beat boundaries
+- dialogue timing targets
+- visual requirements
+- important props/assets
+- joke beats
+- transitions
+- emphasis
+- emotional/tonal requirements
+- required facts
+- optional creative freedom
+
+A useful internal representation is:
+
+    SCRIPT
+      |
+      +-- beats
+      +-- dialogue
+      +-- required visuals
+      +-- timing intentions
+      +-- style constraints
+      +-- asset references
+      +-- continuity notes
+
+The model should be able to cite which script requirement a local edit is serving.
+
+
+================================================================================
+21. AUDIO IS FIRST-CLASS
+================================================================================
+
+The agent is not just a visual model.
+
+Useful inputs include:
+- raw audio
+- transcript
+- dialogue timing
+- music
+- sound effects
+- current timeline audio tracks
+- volume levels
+- fades
+
+The audio understanding path can support:
+- transcript generation
+- spoken-word timing
+- detection of silence
+- laughter
+- sound effects
+- music sections
+- important audio events
+
+The rendered segment should be understood as audio + video, not frames alone.
+
+
+================================================================================
+22. ASSET LIBRARY
+================================================================================
+
+There is a separate personal asset-library subsystem intended to feed the AI editor.
+
+The library was designed as a practical TUI project, not a SaaS backend and not “military-grade security.”
+
+Filesystem:
+
+    home/
+    ├── unprocessed_assets/
+    ├── processed_assets/
+    └── processed_assets_backup/
+
+Core invariant:
+
+    UNPROCESSED -> COPY ONLY -> PROCESSED -> library.json
+
+The TUI must NEVER modify unprocessed source files.
+
+UNPROCESSED ASSETS RULES:
+- never delete
+- never rename
+- never move
+- never modify
+- only scan
+- only read
+- only hash
+- only copy
+
+The processed copy becomes the canonical library item.
+
+
+================================================================================
+23. ASSET LIBRARY TUI MENU
+================================================================================
+
+The planned menu:
+
+1. Scan unprocessed assets
+2. Process unprocessed assets
+3. Search processed assets
+4. List processed assets
+5. View asset details
+6. Edit asset metadata
+7. Delete processed asset
+8. Find duplicates
+9. Validate library
+10. Create backup
+11. Restore backup
+12. Rescan/refresh
+13. Exit
+
+
+================================================================================
+24. ASSET TYPES
+================================================================================
+
+Target recursive asset support:
+
+IMAGES:
+- PNG
+- JPG
+- JPEG
+- WEBP
+- GIF
+
+AUDIO:
+- WAV
+- MP3
+- OGG
+- FLAC
+- M4A
+
+VIDEO:
+- MP4
+- MKV
+- MOV
+- WEBM
+
+Unsupported formats should fail gracefully rather than killing an entire batch.
+
+
+================================================================================
+25. ASSET IDENTIFICATION / HASHING
+================================================================================
+
+Each asset gets a SHA-256 hash for exact duplicate detection.
+
+Stable IDs should be independent of filename.
+
+This matters because:
+- a filename can change
+- the library identity should remain stable
+- metadata updates should not produce a new conceptual asset
+
+Duplicate behavior should support:
+- skip
+- use existing
+- add separate
+- cancel
+
+The tool should clearly report what it did.
+
+
+================================================================================
+26. ASSET METADATA
+================================================================================
+
+Metadata fields discussed include:
+
+- name
+- description
+- tags
+- license name
+- source
+- source URL
+- creator
+- attribution required
+- attribution text
+- notes
+- file/path information
+- stable asset ID
+- hash
+- MIME/type information
+
+Search should cover:
+- name
+- description
+- tags
+- creator
+- license
+- filename
+- notes
+
+Filters should cover:
+- type
+- tag
+- license
+
+All normal asset search should remain local.
+
+
+================================================================================
+27. LIBRARY.JSON
+================================================================================
+
+The canonical library metadata file lives under:
+
+    processed_assets/library.json
+
+Paths should be relative rather than depending on machine-specific absolute paths.
+
+Writes should be crash-safe:
+- atomic write
+- temp file
+- rename
+- no half-written JSON
+
+A crash journal was also considered/implemented in the core.
+
+The system should recover safely from an interrupted operation.
+
+
+================================================================================
+28. COPY / PROCESS WORKFLOW
+================================================================================
+
+When processing an unprocessed asset:
+
+1. Scan the source.
+2. Collect metadata.
+3. Detect duplicates.
+4. Copy the source into processed_assets.
+5. Verify the copy.
+6. Register it in library.json.
+7. Rename only the processed copy if requested.
+8. Never touch the original.
+
+If verification fails:
+- rollback the processed copy
+- do not corrupt the source
+- record the failure
+
+
+================================================================================
+29. ASSET VALIDATION
+================================================================================
+
+Validation was designed as a report-oriented system.
+
+The implementation discussed 17 validation checks, including concepts such as:
+
+- malformed JSON
+- duplicate IDs
+- missing files
+- stale paths
+- duplicate hashes
+- invalid filenames
+- missing required fields
+- suspicious paths
+- invalid source URLs
+- file-size mismatch
+- hash mismatch
+- entries outside processed_assets
+- and related structural consistency checks
+
+Validation should report problems rather than silently “fixing” data without permission.
+
+
+================================================================================
+30. BACKUP / RESTORE
+================================================================================
+
+Backups are timestamped.
+
+Backup storage is primarily metadata/JSON-oriented.
+
+Restore should:
+1. create a safety backup of the current state
+2. restore the requested backup
+3. verify the resulting library
+4. report any problem clearly
+
+The system should avoid making a restore operation irreversible.
+
+
+================================================================================
+31. ASSET API FOR THE AI
+================================================================================
+
+The TUI is not supposed to be the only interface.
+
+The library core should expose a future-friendly API layer including operations such as:
+
+- search_assets
+- get_asset
+- list_assets
+- find_assets_by_tag
+- get_asset_path
+
+Architecture:
+
+    AI EDITOR
+        |
+        v
+    AssetApi
+        |
+        v
+    Library/Core
+        |
+        v
+    Filesystem
+
+The human TUI is only one client.
+
+This separation lets the AI editor search and retrieve assets programmatically without pretending to be a human pressing buttons.
+
+
+================================================================================
+32. ASSET LIBRARY IMPLEMENTATION STATUS
+================================================================================
+
+The personal asset library implementation was substantially completed by an AI coding agent.
+
+Core implementation:
+- TypeScript / Node
+- atomic library persistence
+- SHA-256 hashing
+- duplicate detection
+- copy-only processing
+- copy verification and rollback
+- crash journal
+- recursive scanner and diff
+- weighted + fuzzy search
+- validation
+- timestamped backups
+- restore
+- AssetApi
+- headless CLI
+
+TUI implementation:
+- Ink
+- menu
+- scan
+- processing wizard
+- metadata form
+- duplicate dialog
+- batch report
+- search
+- table list
+- detail + preview
+- edit/rename
+- delete
+- duplicates
+- validation
+- backup
+- restore
+- Tokyo-night themed presentation
+- help overlay
+- toast messages
+- modal keyboard guards
+
+Important bugs that were fixed:
+1. Menu items 3 and 4 were missing their screen field, which caused search/list navigation to silently do nothing.
+2. Escape-key handling could pop twice; this was redesigned so the active frame owns Escape and modal overlays take ownership while open.
+3. Text input yields while modals are open.
+4. Help overlay useEffect leak caused by depending on the entire store.
+5. ESM require issue in DeleteScreen.
+6. JSX in an incorrectly named .ts file.
+7. dim vs dimColor mismatch.
+8. useWindowSize shape mismatch.
+9. helper functions that returned null but had incompatible declared types.
+
+Verification reported:
+- tsc --noEmit clean
+- 85/85 tests passing across 10 files
+- 3 new Ink smoke tests
+- real PTY run booted, rendered, opened process screen and exited with code 0
+- real CLI validation against the real home directory processed one asset, created a backup and passed 17/17 checks
+
+A particularly important smoke-test assertion:
+the process workflow left unprocessed_assets byte-for-byte untouched.
+
+
+================================================================================
+33. RAW FOOTAGE UNDERSTANDING
+================================================================================
+
+The raw footage subsystem should answer:
+
+What actually exists in the source footage?
+
+It should identify:
+- people
+- objects
+- scenes
+- dialogue
+- reactions
+- gestures
+- motion
+- important events
+- usable moments
+- low-value/dead sections
+- possible cut points
+- continuity details
+
+The model should not invent footage that is not available.
+
+This is one of the reasons the observation loop matters:
+the edit must be grounded in actual media.
+
+
+================================================================================
+34. REFERENCE VIDEO UNDERSTANDING
+================================================================================
+
+The reference-video dataset should not simply be memorized as a bag of examples.
+
+The goal is to extract reusable editing behavior:
+
+- cut frequency
+- shot lengths
+- reaction timing
+- subtitle placement
+- sound-effect timing
+- zoom patterns
+- music timing
+- transition patterns
+- visual emphasis
+- comedic timing
+- silence
+- repetition
+- pacing changes
+
+The model should learn patterns while still following the actual script and actual footage.
+
+
+================================================================================
+35. EDITING STYLE VS CONTENT
+================================================================================
+
+The style system should separate:
+
+CONTENT:
+    what is being said / shown
+
+STYLE:
+    how it should be edited
+
+This is important because the reference videos are not necessarily about the same subject matter as the generated video.
+
+The model should learn something like:
+
+    "When a moment of this type happens, this is the editing behavior I tend to use."
+
+rather than:
+
+    "Always copy this exact clip."
+
+================================================================================
+36. TIMELINE STATE IS AN INPUT
+================================================================================
+
+The model must be able to inspect the actual project state.
+
+Useful timeline information includes:
+- tracks
+- clip IDs
+- start time
+- end time
+- durations
+- source asset
+- effects
+- transitions
+- transforms
+- keyframes
+- volume
+- captions
+- markers
+- active timeline
+- export settings
+
+The editor state prevents the agent from making contradictory assumptions.
+
+Example:
+If it thinks a clip ends at 4 seconds but the timeline says it ends at 4.8 seconds, timeline state wins.
+
+
+================================================================================
+37. VERSIONING / CHECKPOINTING
+================================================================================
+
+Because the AI is autonomous, every important local operation should be recoverable.
+
+Useful checkpoints:
+- before an edit
+- after a successful render
+- after correction
+- after major macro changes
+
+The project should be able to:
+- roll back a bad segment
+- compare timeline versions
+- resume after cloud runtime loss
+- restore a previous good state
+
+This is especially important on free cloud environments where sessions can disappear.
+
+
+================================================================================
+38. 30-HOUR RUNTIME IDEA
+================================================================================
+
+An idea discussed was allowing approximately 30 hours of autonomous runtime per finished video as an upper ceiling.
+
+This could be plenty for a 10-minute video because the system may spend substantial time:
+- rendering
+- observing
+- correcting
+- doing macro review
+- retrying difficult segments
+
+However, 30 hours should be treated as a ceiling, not a requirement.
+
+The preferred stopping condition is quality / acceptance criteria:
+    stop when the video passes the checks,
+not:
+    keep running until the timer expires.
+
+
+================================================================================
+39. 10-MINUTE SOURCE VIDEO EXAMPLE
+================================================================================
+
+A representative thought experiment used videos around 10 minutes long.
+
+At 2 observations per second:
+
+    10 minutes * 60 seconds * 2 FPS = ~1200 observations
+
+This is much more manageable than processing every video frame.
+
+The number of observations can still increase selectively around high-motion/high-importance sections.
+
+
+================================================================================
+40. 50 REFERENCE VIDEOS
+================================================================================
+
+The working dataset target discussed was approximately 50 reference videos.
+
+These can provide a significant style vocabulary.
+
+They should ideally be diverse enough to expose:
+- fast and slow pacing
+- dialogue
+- jokes
+- reactions
+- sound effects
+- captions
+- music
+- visual edits
+- different scene structures
+
+The point is to teach editing behavior rather than memorize exact content.
+
+
+================================================================================
+41. POSSIBLE ANNOTATION FACTORY
+================================================================================
+
+A practical future pipeline is to automatically generate training examples.
+
+Conceptually:
+
+    Reference video
+        |
+        +--> sampled frames
+        +--> transcript
+        +--> audio event data
+        +--> timeline structure
+        +--> detected edits
+        |
+        v
+    structured training example
+
+For raw footage:
+
+    Raw footage
+        |
+        +--> frames
+        +--> transcript
+        +--> event labels
+        +--> usable moments
+        |
+        v
+    editing task example
+
+For self-critique:
+
+    intended edit
+        ->
+    rendered result
+        ->
+    observed discrepancy
+        ->
+    correction example
+
+
+================================================================================
+42. EVIDENCE / CONFIDENCE
+================================================================================
+
+The system should distinguish:
+- directly observed facts
+- strong inferences
+- uncertain guesses
+
+For example:
+
+DIRECT:
+    "The transcript says X."
+
+OBSERVED:
+    "The shot contains a red object at approximately 2.5 seconds."
+
+INFERRED:
+    "This appears to be the moment intended for the joke."
+
+UNCERTAIN:
+    "The user may want a reaction cut here."
+
+This helps prevent the AI from turning uncertainty into false certainty.
+
+
+================================================================================
+43. ASK-THE-USER FALLBACK
+================================================================================
+
+The agent should have a controlled way to ask the user for help.
+
+Examples:
+- required asset cannot be found
+- source is corrupted
+- two plausible edits conflict
+- a script instruction is ambiguous
+- an editor operation is unsupported
+- a render repeatedly fails
+- the model cannot determine whether a visual event is intentional
+
+The fallback should be:
+    "Here is what I know, here is what I tried, here is exactly what is ambiguous."
+
+Not:
+    hallucinate a resolution.
+
+
+================================================================================
+44. MCP IS THE TOOL BUS
+================================================================================
+
+MCP is the preferred connection between the model and the editor.
+
+The model should not have to generate arbitrary shell commands for every edit.
+
+Instead it should produce structured tool calls corresponding to actual editor operations.
+
+Conceptually:
+
+    tool:
+        trim_clip
+    args:
+        clip_id
+        new_in
+        new_out
+
+or:
+
+    tool:
+        add_transition
+    args:
+        track
+        clip_a
+        clip_b
+        transition_type
+        duration
+
+The exact Velorn schema should be learned from its current MCP tool definitions.
+
+
+================================================================================
+45. COMPUTER-USE FALLBACK
+================================================================================
+
+GUI control is not dead; it is just no longer the primary architecture.
+
+Possible fallback uses:
+- an unsupported editor dialog
+- a one-off export setting
+- visual debugging
+- checking unexpected UI state
+- emergency setup
+- recovery when an API operation is temporarily unavailable
+
+Normal editing should be:
+    API/MCP first.
+
+
+================================================================================
+46. WHY NOT LIVE VIEWPORT CONTROL
+================================================================================
+
+Reasons:
+
+1. Memory:
+   a live editor viewport adds unnecessary graphical overhead.
+
+2. Compute:
+   the agent would waste compute interpreting UI elements rather than timeline state.
+
+3. Reliability:
+   deterministic API operations are more reliable than screen-coordinate actions.
+
+4. Debuggability:
+   structured project state can be inspected.
+
+5. Reproducibility:
+   the same tool call can recreate an edit.
+
+6. Cloud suitability:
+   headless/API-first workflows fit cloud compute much better.
+
+7. Render loop already exists:
+   the AI gets a real video result after it edits.
+
+
+================================================================================
+47. WHY NOT FFmpeg AS THE EDITOR
+================================================================================
+
+FFmpeg is excellent infrastructure for media operations, but the desired abstraction is richer.
+
+The AI wants to think in:
+- clips
+- tracks
+- edits
+- transitions
+- keyframes
+- captions
+- assets
+- timeline state
+
+The project therefore prefers:
+    real NLE/project model
+over:
+    raw command-line filter graphs as the agent's primary mental model.
+
+FFmpeg may still live underneath the editor/render stack.
+
+
+================================================================================
+48. CLOUD / FREE-COMPUTE DESIGN PHILOSOPHY
+================================================================================
+
+The project is intentionally designed around free or near-free compute wherever possible.
+
+Consequences:
+- checkpoint everything
+- avoid long uninterrupted assumptions
+- keep state external to ephemeral sessions
+- minimize unnecessary video transfer
+- use efficient frame sampling
+- use parameter-efficient training
+- tolerate restarts
+- keep the editor and model separable
+
+
+================================================================================
+49. NETWORKING PHILOSOPHY
+================================================================================
+
+The proposed split is not dependent on a low-latency remote desktop.
+
+The traffic is mostly:
+- structured MCP commands
+- timeline state
+- metadata
+- selected frames
+- short rendered segments
+- transcripts
+
+Therefore moderate WAN latency can be acceptable.
+
+Bandwidth matters more when moving large raw video files.
+
+Preferred strategy:
+- keep source media near the editor when possible
+- send only necessary observations to the model
+- render short review clips
+- avoid streaming an entire editor UI
+
+
+================================================================================
+50. RENDERED OUTPUT IS GROUND TRUTH FOR REVIEW
+================================================================================
+
+One of the strongest principles in the project is:
+
+Do not critique the plan.
+Critique what was actually rendered.
+
+The plan is hypothetical.
+The render is evidence.
+
+That is why the pipeline is:
+
+    plan
+      ->
+    edit
+      ->
+    render
+      ->
+    observe
+      ->
+    compare
+
+
+================================================================================
+51. MACRO QUALITY CHECKS
+================================================================================
+
+A whole-video reviewer should eventually test at least:
+
+STRUCTURE
+- Does the story make sense?
+- Are required beats present?
+
+PACING
+- Are sections too slow?
+- Are cuts too frequent?
+
+AUDIO
+- Dialogue clear?
+- Music too loud?
+- Sound effects poorly timed?
+- Silence intentional?
+
+VISUAL
+- Any continuity mistakes?
+- Any broken transforms?
+- Bad crop?
+- Bad framing?
+
+CAPTIONS
+- Timing
+- placement
+- spelling
+- overlap
+
+STYLE
+- Does the finished result resemble the learned editing style?
+
+TECHNICAL
+- correct resolution
+- frame rate
+- audio
+- export success
+
+
+================================================================================
+52. PROJECT PHILOSOPHY
+================================================================================
+
+The goal is not:
+
+"Make an AI that can call an NLE API."
+
+The actual goal is:
+
+"Make an AI that can repeatedly make editing decisions, observe whether those decisions worked, and improve the edit until the result satisfies the script and style."
+
+The editor is a body/tool environment.
+
+The model is the decision-maker.
+
+The render is the experiment.
+
+The observation is the measurement.
+
+The correction is the learning/action loop.
+
+
+================================================================================
+53. IMPORTANT ENGINEERING DISTINCTION: PLAN VS STATE
+================================================================================
+
+There are at least four categories of project knowledge:
+
+A. AUTHORITATIVE INPUT
+- script
+- source media
+- user requirements
+- explicit constraints
+
+B. OBSERVED STATE
+- current timeline
+- rendered output
+- transcript
+- frame observations
+
+C. DERIVED STATE
+- likely beat boundaries
+- inferred continuity
+- suggested cut points
+
+D. AGENT DECISIONS
+- selected clip
+- chosen effect
+- correction plan
+
+These should not be mixed together.
+
+The model should know whether a fact came from the script, timeline, render, or its own inference.
+
+
+================================================================================
+54. TRAINING ORDER
+================================================================================
+
+A sensible training progression is:
+
+PHASE 1
+---------
+Teach basic multimodal reasoning and structured tool use.
+
+PHASE 2
+---------
+Teach editor semantics and Velorn tools.
+
+PHASE 3
+---------
+Teach timeline/project-state interpretation.
+
+PHASE 4
+---------
+Teach raw-footage understanding.
+
+PHASE 5
+---------
+Teach reference editing style.
+
+PHASE 6
+---------
+Teach combined tasks.
+
+PHASE 7
+---------
+Teach plan-vs-reality self-critique.
+
+PHASE 8
+---------
+Teach macro/full-video correction loops.
+
+The exact training schedule can change once the prototype proves which failures actually occur.
+
+
+================================================================================
+55. BOOTSTRAPPING VS REAL DATA
+================================================================================
+
+Generic tool-calling datasets can bootstrap action syntax.
+
+But the project's strongest data will eventually be generated from the actual workflow.
+
+The most valuable examples are grounded in:
+
+    real script
+    +
+    real source footage
+    +
+    real assets
+    +
+    real timeline
+    +
+    real render
+    +
+    real correction
+
+
+================================================================================
+56. PROTOTYPE STRATEGY
+================================================================================
+
+The project should start much smaller than the complete system.
+
+Recommended prototype:
+
+- one short script
+- a small set of raw clips
+- a few assets
+- one style target
+- one editor
+- one short timeline
+- 720p30
+- 8-second local loop
+- render
+- inspect
+- fix
+
+Only once that works should the project scale to:
+- long videos
+- multiple tracks
+- many effects
+- larger training datasets
+- full macro review
+- 30-hour runtime ceilings
+
+
+================================================================================
+57. RESUME / SESSION RECOVERY
+================================================================================
+
+Because cloud environments can terminate, the agent must save:
+
+- current script position
+- project/timeline state reference
+- accepted chunks
+- current chunk
+- correction history
+- asset IDs
+- model checkpoint
+- render artifact references
+- unresolved issues
+- last successful checkpoint
+
+On restart:
+
+    load state
+      ->
+    verify editor project
+      ->
+    verify last accepted chunk
+      ->
+    continue
+
+
+================================================================================
+58. POSSIBLE INTERNAL PROJECT STATE
+================================================================================
+
+A useful conceptual state object:
+
+    project:
+      script
+      style_profile
+      asset_library
+      editor_project_id
+      active_timeline
+      technical_settings
+
+    progress:
+      current_time
+      accepted_until
+      current_chunk
+      retry_count
+
+    context:
+      persistent_facts
+      recent_render_context
+      recent_transcript
+      recent_observations
+
+    critique:
+      intended
+      actual
+      discrepancy
+      correction
+
+    recovery:
+      last_checkpoint
+      previous_good_state
+      unresolved_user_questions
+
+
+================================================================================
+59. EDIT ACCEPTANCE
+================================================================================
+
+A local chunk should eventually be accepted only when checks pass.
+
+Possible acceptance requirements:
+- script beat is present
+- intended timing is approximately satisfied
+- audio is coherent
+- continuity is acceptable
+- no obvious render errors
+- style is acceptable
+- no missing required asset
+- no unexplained discrepancy remains
+
+Not every chunk needs to be perfect in isolation, because the macro pass exists.
+
+
+================================================================================
+60. RETRIES
+================================================================================
+
+The system should maintain a retry budget.
+
+For example:
+- retry render if renderer fails
+- retry edit if a measurable discrepancy exists
+- escalate if repeated corrections do not converge
+
+A recurring failure should produce a meaningful diagnostic record.
+
+Never allow an infinite loop where the model keeps making the same correction.
+
+
+================================================================================
+61. DIFFERENT FAILURE CLASSES
+================================================================================
+
+FAILURE TYPE A:
+Editor/tool failure.
+Example:
+tool call rejected.
+
+FAILURE TYPE B:
+Render failure.
+Example:
+export crashes.
+
+FAILURE TYPE C:
+Observation failure.
+Example:
+model cannot interpret a critical frame.
+
+FAILURE TYPE D:
+Script ambiguity.
+Example:
+two interpretations are plausible.
+
+FAILURE TYPE E:
+Creative mismatch.
+The output is technically correct but stylistically weak.
+
+FAILURE TYPE F:
+Non-convergence.
+The system tries several corrections and the result does not improve.
+
+Each category should be handled differently.
+
+
+================================================================================
+62. MODEL SHOULD NOT BECOME “BLIND TOOL CALLER”
+================================================================================
+
+A successful system is not just:
+
+    script -> tool call -> next tool call
+
+It should maintain a loop in which it checks whether the world changed as expected.
+
+The model should have an internal discipline:
+
+    "I issued this command.
+     What should it have changed?
+     Did the render actually reflect that?
+     If not, why?"
+
+
+================================================================================
+63. TOOL-SCHEMA LEARNING
+================================================================================
+
+The model should learn:
+- tool name
+- purpose
+- required arguments
+- optional arguments
+- return structure
+- failure cases
+- state dependencies
+
+But the agent runtime should still validate tool arguments.
+
+Do not rely on fine-tuning alone to protect against malformed tool calls.
+
+
+================================================================================
+64. EDITOR API SAFETY
+================================================================================
+
+Even though this is a personal project, the editor integration should have practical guardrails:
+
+- reject impossible timeline operations
+- validate clip IDs
+- validate ranges
+- prevent accidental deletion of source assets
+- checkpoint destructive operations
+- report tool failures
+- record changes
+
+
+================================================================================
+65. ASSET SAFETY
+================================================================================
+
+The most important asset invariant remains:
+
+    unprocessed_assets are sacred source material.
+
+No AI edit should ever mutate them.
+
+Everything should happen on processed copies or within the editor project.
+
+
+================================================================================
+66. USER EXPERIENCE GOAL
+================================================================================
+
+The intended human workflow is simple:
+
+1. Give the system the script.
+2. Give it source footage.
+3. Give it the asset library.
+4. Give it reference examples/style.
+5. Start the agent.
+6. Let it edit, render, inspect and correct.
+7. Answer a question only when the system truly needs help.
+8. Receive a finished video and the project state.
+
+The complexity should remain under the hood.
+
+
+================================================================================
+67. PERSONAL EDITING STYLE
+================================================================================
+
+The reference-video pipeline is specifically intended to capture the user's preferred editing style.
+
+Style should be represented as a learned profile rather than a single prose prompt.
+
+Potential dimensions:
+- pacing
+- humor timing
+- caption frequency
+- zoom frequency
+- SFX density
+- transition restraint
+- music behavior
+- visual emphasis
+- reaction timing
+- cut rhythm
+
+
+================================================================================
+68. “WHAT SHOULD HAPPEN” VS “WHAT CAN HAPPEN”
+================================================================================
+
+The editor knows what can be done.
+
+The script and style system determine what should be done.
+
+The asset library determines what resources are available.
+
+The observation system determines what actually happened.
+
+These are four different roles.
+
+    EDITOR:
+        capability
+
+    SCRIPT:
+        intention
+
+    ASSET LIBRARY:
+        resources
+
+    OBSERVER:
+        reality
+
+
+================================================================================
+69. CURRENT HIGH-LEVEL PIPELINE
+================================================================================
+
+A consolidated version:
+
+    USER INPUT
+    ----------
+    script
+    raw footage
+    reference videos
+    personal asset library
+    project constraints
+
+               |
+               v
+
+    PERSISTENT PROJECT CONTEXT
+    --------------------------
+    script facts
+    style profile
+    timeline facts
+    asset references
+    decisions
+    unresolved issues
+
+               |
+               v
+
+    AI MODEL
+    --------
+    multimodal understanding
+    planning
+    tool selection
+    editing decisions
+
+               |
+               v
+
+    MCP
+    ---
+    structured editor commands
+
+               |
+               v
+
+    VELORN
+    ------
+    real project/timeline
+    assets
+    effects
+    captions
+    audio
+
+               |
+               v
+
+    RENDER ~8 SEC
+    -------------
+
+               |
+               v
+
+    OBSERVATION
+    -----------
+    sampled frames
+    transcript
+    audio events
+    timeline/project state
+
+               |
+               v
+
+    PLAN VS REALITY
+    ---------------
+    intended
+    actual
+    discrepancy
+    correction
+
+               |
+               +--------> edit again
+               |
+               v
+           ACCEPT CHUNK
+               |
+               v
+        NEXT ~8 SECOND CHUNK
+
+               |
+               v
+
+        WHOLE-VIDEO REVIEW
+               |
+               v
+
+        FINAL CORRECTIONS
+               |
+               v
+
+           FINAL VIDEO
+
+
+================================================================================
+70. WHAT IS CURRENTLY DECIDED
+================================================================================
+
+CURRENT:
+- API-first editor control.
+- Velorn as primary editor target.
+- MCP as preferred tool bus.
+- 8-second local render/edit chunk.
+- ~3 seconds previous rendered context.
+- render -> inspect -> compare -> correct loop.
+- plan vs reality state.
+- Kaggle for AI workload.
+- Colab for editor/rendering was the proposed split.
+- Cloudflare tunnel for remote MCP connectivity was the proposed network bridge.
+- 2 x Tesla T4 target environment was discussed.
+- 720p30 target.
+- SmolVLM 2.2B target model.
+- approximately 50 reference videos.
+- long-form source videos around 10 minutes were used as a planning example.
+- 2 FPS baseline visual observation idea.
+- persistent project memory/context.
+- asset library with strict copy-only source handling.
+- free/low-cost/cloud-first architecture.
+- ability to ask user for help.
+- full-video macro review after local editing.
+
+NOT CURRENT:
+- GUI/computer-use as the primary editor control mechanism.
+- FFmpeg as the only editor abstraction.
+- requiring continuous live viewport observation.
+- assuming first-pass edits are correct.
+
+
+================================================================================
+71. OPEN TECHNICAL QUESTIONS
+================================================================================
+
+1. Exactly which Velorn MCP tools are sufficient for the first prototype?
+2. Which editor operations are missing and require GUI fallback?
+3. How stable is the Velorn API across updates?
+4. What is the best way to persist editor project files/checkpoints in Colab?
+5. How should raw video be stored so the model and editor both access it efficiently?
+6. What exact SmolVLM 2.2B fine-tuning setup fits the available T4 memory?
+7. What frame sampling strategy produces the best result per compute cost?
+8. How should audio and vision be jointly encoded?
+9. How should the model represent timeline state compactly?
+10. How should the plan-vs-reality comparison be trained?
+11. How should the system decide that a chunk is “good enough”?
+12. How should macro review feed corrections back into local editing?
+13. How should cloud session termination be handled?
+14. How should tunnels reconnect?
+15. How should large media transfer be minimized?
+16. How should the asset library expose video/audio metadata efficiently?
+17. What should happen after repeated non-converging corrections?
+18. How should user questions be presented and resumed?
+19. How much of the editor documentation should be embedded vs retrieved on demand?
+20. How should training examples be generated automatically from real editing runs?
+
+
+================================================================================
+72. FIRST REAL PROTOTYPE
+================================================================================
+
+A strong minimum prototype is:
+
+INPUT:
+- 30-60 seconds of source footage
+- one short script
+- a small handful of assets
+- one simple editing style reference
+
+PROCESS:
+- model receives script
+- model reads current project
+- model edits the first ~8 seconds
+- render
+- observe
+- compare
+- correct
+- accept
+- continue
+
+OUTPUT:
+- final short video
+- editor project
+- correction records
+- logs
+
+Do not begin with a 10-minute masterpiece.
+
+
+================================================================================
+73. MINIMUM OBSERVATION RECORD
+================================================================================
+
+For each rendered segment store:
+
+    segment_start
+    segment_end
+    intended_script
+    sampled_frames
+    transcript
+    audio_events
+    actual_description
+    discrepancy
+    correction
+    final_status
+    retry_count
+
+This record becomes valuable training data later.
+
+
+================================================================================
+74. FUTURE TRAINING DATA FROM THE AGENT ITSELF
+================================================================================
+
+Once the prototype can edit:
+
+Every successful run becomes a source of data.
+
+Store:
+- input
+- timeline before
+- tool calls
+- render
+- observations
+- corrections
+- final accepted state
+
+Then:
+    successful runs -> training examples
+
+Failed runs can become:
+    failure -> diagnosis -> correction examples
+
+This may eventually be more valuable than generic tool-calling data.
+
+
+================================================================================
+75. SELF-IMPROVEMENT LOOP
+================================================================================
+
+Long-term concept:
+
+    RUN VIDEO
+       |
+       v
+    LOG DECISIONS
+       |
+       v
+    LOG FAILURES
+       |
+       v
+    LOG CORRECTIONS
+       |
+       v
+    CURATE DATA
+       |
+       v
+    FINE-TUNE
+       |
+       v
+    BETTER NEXT RUN
+
+This should not be an uncontrolled self-training feedback loop.
+
+Data should be reviewed/filtered to avoid amplifying mistakes.
+
+
+================================================================================
+76. WHY THE PROJECT IS INTERESTING
+================================================================================
+
+The unusual part is not any one component.
+
+It is the combination:
+
+- multimodal model
+- actual video editor
+- structured editor API
+- asset library
+- raw footage understanding
+- style learning
+- iterative rendering
+- observation
+- script comparison
+- self-correction
+- macro review
+
+The system is closer to an editing agent operating an actual creative tool than a simple “AI video generator.”
+
+
+================================================================================
+77. DESIGN RULES TO PRESERVE
+================================================================================
+
+RULE 1:
+Do not let the model assume its own output is correct.
+
+RULE 2:
+Use actual editor state, not guessed state.
+
+RULE 3:
+Use rendered output as evidence.
+
+RULE 4:
+Never mutate original unprocessed assets.
+
+RULE 5:
+Keep the editor project model richer than raw FFmpeg commands.
+
+RULE 6:
+Use API/MCP first and GUI fallback second.
+
+RULE 7:
+Separate intention, observation, inference, and decision.
+
+RULE 8:
+Checkpoint everything important.
+
+RULE 9:
+Make cloud runtime interruption survivable.
+
+RULE 10:
+Ask the user rather than hallucinating when genuinely stuck.
+
+RULE 11:
+Style examples teach editing behavior, not literal content.
+
+RULE 12:
+Keep local edits connected with previous context and global review.
+
+
+================================================================================
+78. PROJECT ONE-SENTENCE DEFINITION
+================================================================================
+
+A multimodal AI editing agent that learns an editing style, understands scripts and raw footage, controls a real NLE through a structured API, renders short sections, watches what it actually made, compares reality with intent, corrects itself, and performs a final whole-video review.
+
+
+================================================================================
+79. FINAL ARCHITECTURE DIAGRAM
+================================================================================
+
+                         USER
+                          |
+          +---------------+----------------+
+          |               |                |
+          v               v                v
+        SCRIPT       RAW FOOTAGE     REFERENCE VIDEOS
+          |               |                |
+          +---------------+----------------+
+                          |
+                          v
+                   PROJECT CONTEXT
+                          |
+                          v
+                  +---------------+
+                  |  AI MODEL     |
+                  | multimodal    |
+                  +-------+-------+
+                          |
+                    MCP / TOOLS
+                          |
+                          v
+                  +---------------+
+                  |    VELORN     |
+                  | project/NLE   |
+                  +-------+-------+
+                          |
+                     RENDER 8s
+                          |
+                          v
+                  +---------------+
+                  |  OBSERVATION  |
+                  | frames/audio  |
+                  +-------+-------+
+                          |
+                          v
+                INTENDED VS ACTUAL
+                          |
+             +------------+------------+
+             |                         |
+           mismatch                  okay
+             |                         |
+             v                         v
+          CORRECT                    ACCEPT
+             |                         |
+             +----------->-------------+
+                          |
+                          v
+                    NEXT SEGMENT
+                          |
+                          v
+                    MACRO REVIEW
+                          |
+                          v
+                  FINAL CORRECTIONS
+                          |
+                          v
+                      EXPORT
+
+
+================================================================================
+80. HISTORICAL DESIGN NOTES
+================================================================================
+
+Some ideas changed during development and should remain documented because they explain the current architecture.
+
+EARLIER IDEA:
+AI controls the video editor GUI directly.
+
+REASON IT CHANGED:
+The viewport was unnecessary overhead when the system already renders short chunks and can inspect rendered output.
+
+EARLIER IDEA:
+Use FFmpeg directly as the primary editor.
+
+REASON IT CHANGED:
+The AI needs a real timeline/project abstraction rather than low-level media commands.
+
+EARLIER IDEA:
+Process longer chunks / generic fixed windows.
+
+CURRENT DIRECTION:
+Use ~8-second operational chunks with overlapping prior rendered context and a macro pass over the full video.
+
+EARLIER EMPHASIS:
+Computer-use.
+
+CURRENT EMPHASIS:
+API/MCP first, GUI fallback.
+
+These are not contradictions.
+They are architectural evolution.
+
+
+================================================================================
+81. GLOSSARY
+================================================================================
+
+NLE:
+    Non-linear editor.
+
+MCP:
+    Model Context Protocol / structured tool interface connecting the agent to external tools.
+
+LOCAL CHUNK:
+    A short editing/render window, currently ~8 seconds.
+
+PREVIOUS CONTEXT:
+    Approximately 3 seconds of already-rendered video supplied to the next local edit for continuity.
+
+MICRO:
+    Fine-grained event observations, historically around 0.5 second intervals.
+
+MACRO:
+    Whole-video contextual review.
+
+PLAN VS REALITY:
+    Comparison between intended content and observed rendered content.
+
+ASSET LIBRARY:
+    Structured collection of reusable images, audio, video and other media with metadata.
+
+PROCESSED ASSET:
+    Canonical working copy that is safe for downstream use.
+
+UNPROCESSED ASSET:
+    Original source material which the library must never modify.
+
+CHECKPOINT:
+    Recoverable project state after a known-good operation.
+
+SELF-CRITIQUE:
+    Explicit observation and correction of the agent's own output.
+
+
+================================================================================
+82. END STATE ENVISIONED
+================================================================================
+
+The eventual system should feel like handing a capable editor a project and saying:
+
+"Here is the script.
+Here is the footage.
+Here are my assets.
+Here are examples of how I like edits to feel.
+Make the video."
+
+The AI should then:
+
+- understand the script
+- inspect the footage
+- locate useful material
+- choose assets
+- operate the real editor
+- create short sections
+- render
+- watch its own result
+- detect mistakes
+- fix them
+- preserve continuity
+- continue
+- perform a final macro pass
+- deliver the project and finished video
+- ask the user only when genuinely necessary
+
+The project is fundamentally an agentic closed-loop creative system:
+
+    INTENT -> ACTION -> RESULT -> OBSERVATION -> CORRECTION
+
+Everything else exists to make that loop reliable.
+
+
+================================================================================
+83. CURRENT WORKING SUMMARY
+================================================================================
+
+PROJECT:
+    Personal AI video editor / agent.
+
+PRIMARY EDITOR:
+    Velorn.
+
+EDITOR CONTROL:
+    MCP/API first.
+    GUI/computer-use only as fallback/debug.
+
+CORE CHUNK:
+    ~8 seconds.
+
+CONTEXT:
+    ~3 seconds previous rendered context.
+
+OBSERVATION:
+    approximately 2 FPS baseline, adaptive as needed.
+
+MODEL:
+    SmolVLM 2.2B target.
+
+TRAINING:
+    PEFT/efficient fine-tuning on free cloud hardware where possible.
+
+TRAINING SOURCES:
+    generic tool-calling bootstrap
+    Velorn documentation/tool schemas
+    reference editing videos (~50 discussed)
+    raw footage examples
+    combined editing tasks
+    self-critique/correction examples
+
+COMPUTE:
+    Kaggle for model workload was proposed.
+    Colab for editor/render workload was proposed.
+    2 x Tesla T4 discussed.
+    720p30 target.
+
+NETWORK:
+    MCP + Cloudflare tunnel proposed.
+
+ASSET SYSTEM:
+    copy-only source protection
+    processed library
+    library.json
+    SHA-256
+    search
+    tags
+    metadata
+    backups
+    validation
+    AssetApi.
+
+REVIEW:
+    local render/inspect/correct
+    then whole-video macro review.
+
+RUNTIME:
+    ~30-hour ceiling discussed as a possible upper bound, not mandatory.
+
+FAIL-SAFE:
+    checkpointing + user escalation.
+
+PHILOSOPHY:
+    The AI must observe what it actually made.
+
+================================================================================
+84. THE SIMPLEST WAY TO REMEMBER THE WHOLE PROJECT
+================================================================================
+
+A useful mental picture is:
+
+    YOUR AI
+       |
+       v
+      MCP
+       |
+       v
+     VELORN
+       |
+       v
+   RENDER 8 SEC
+       |
+       v
+   AI WATCHES IT
+       |
+       v
+ SCRIPT VS REALITY
+       |
+       v
+ FIX IT
+       |
+       v
+ DO THE NEXT 8 SEC
+       |
+       v
+ FULL VIDEO REVIEW
+       |
+       v
+ FINAL VIDEO
+
+This is the project.
+Everything else supports this loop.
+
+================================================================================
+END OF DUMP
+================================================================================
