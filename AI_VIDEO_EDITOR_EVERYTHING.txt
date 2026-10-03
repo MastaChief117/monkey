@@ -274,7 +274,8 @@ The preferred architecture is distributed:
                     | frames/audio/transcript
                     v
     +------------------------------+
-    |       OBSERVATION AI         |
+    |       SAME MAIN AI MODEL     |
+    | watches + understands result |
     | intended vs actual compare   |
     +---------------+--------------+
                     |
@@ -488,7 +489,7 @@ This is much more efficient for an API-first architecture.
 
 LAYER C — USER'S REFERENCE VIDEOS
 ---------------------------------
-The project includes roughly 50 example/reference videos as a target style set.
+The project shortlisted 50 example/reference videos, with a final reference set of 25 videos. The remaining shortlisted videos can be retained for validation/evaluation rather than discarded.
 
 These should teach:
 - pacing
@@ -2160,7 +2161,7 @@ CURRENT:
 - MCP as preferred tool bus.
 - 8-second local render/edit chunk.
 - ~3 seconds previous rendered context.
-- render -> inspect -> compare -> correct loop.
+- same-main-model render -> inspect -> compare -> correct loop.
 - plan vs reality state.
 - Kaggle for AI workload.
 - Colab for editor/rendering was the proposed split.
@@ -2168,13 +2169,15 @@ CURRENT:
 - 2 x Tesla T4 target environment was discussed.
 - 720p30 target.
 - SmolVLM 2.2B target model.
-- approximately 50 reference videos.
+- 50 videos shortlisted; 25 final reference videos.
 - long-form source videos around 10 minutes were used as a planning example.
 - 2 FPS baseline visual observation idea.
 - persistent project memory/context.
 - asset library with strict copy-only source handling.
 - free/low-cost/cloud-first architecture.
 - ability to ask user for help.
+- 500M-700M specialist library/search model; not a second video editor.
+- main model itself performs editor tool calls and directly observes its own renders.
 - full-video macro review after local editing.
 
 NOT CURRENT:
@@ -2677,4 +2680,45 @@ Everything else supports this loop.
 
 ================================================================================
 END OF DUMP
+================================================================================
+
+
+================================================================================
+LATEST ARCHITECTURE UPDATE
+================================================================================
+
+The latest clarification is important:
+
+1. The MAIN MODEL is the actual editor.
+   It makes the editor/tool calls itself.
+
+2. The MAIN MODEL directly watches/inspects its own rendered output.
+   There is no separate AI observation model in the core editing loop.
+
+3. The MAIN MODEL compares:
+       script/intention
+       vs
+       actual rendered result
+
+   and then decides its own correction.
+
+4. A separate 500M-700M specialist model may exist for asset/effect
+   library search and metadata interpretation. It is not responsible
+   for creative editing or video observation.
+
+5. The final reference set is 25 videos, selected from 50 shortlisted
+   videos.
+
+6. The two T4s are expected to carry the main multimodal/video workload
+   and editor/rendering workload; the architecture should not assume
+   an additional video model GPU is available.
+
+The core philosophy is:
+
+    THE EDITOR MUST SEE WHAT IT MADE.
+
+Not:
+
+    ANOTHER AI TELLS THE EDITOR WHAT IT MADE.
+
 ================================================================================
