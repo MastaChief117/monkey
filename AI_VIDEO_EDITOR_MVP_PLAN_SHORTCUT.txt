@@ -1,0 +1,11 @@
+AI VIDEO EDITOR MVP PLAN — SHORTCUT
+===================================
+
+Shortcut file for the main action plan:
+
+- Main file: AI_VIDEO_EDITOR_MVP_PLAN.txt
+
+This file is only a quick pointer so it is easier to find in the repo root.
+
+GitHub path:
+https://github.com/MastaChief117/monkey/blob/main/AI_VIDEO_EDITOR_MVP_PLAN.txt
