@@ -1,0 +1,315 @@
+AI VIDEO EDITOR — REALISTIC MVP PLAN
+====================================
+
+CORE PHILOSOPHY
+---------------
+Plan -> Create -> Observe -> Compare -> Correct -> Continue
+
+This is the heart of the system. The AI should not blindly trust its edits.
+It renders, watches, and fixes what actually went wrong.
+
+WHAT WE'RE BUILDING
+-------------------
+A small proof that an AI can:
+1. Read a short script (2 sentences)
+2. Take raw footage (10 seconds)
+3. Edit it using a real editor API
+4. Render the result
+5. Inspect what it actually made
+6. Fix it if wrong
+7. Repeat until acceptable
+
+That's the whole MVP. Not a full product. Just one working loop.
+
+TARGET: 10-SECOND DEMO
+----------------------
+- Input: one 10-second raw clip + simple script
+- Output: edited 10-second result
+- Loop: render -> inspect -> fix -> render (iterate 2-3 times)
+- Success: result is noticeably better than raw footage
+- Proof: video before/after showing AI made real editing decisions
+
+
+REALISTIC 8-10 WEEK TIMELINE
+-----------------------------
+
+PHASE 1: BUILD THE LOOP (Weeks 1-3)
+- Choose one editor: Shotcut (mature, simpler than Velorn for MVP)
+- Define exact output format: structured edit commands
+- Build render pipeline: short segment -> video file
+- Build inspect pipeline: rendered video -> frames + transcript
+- Test with ONE example
+- Goal: one 8-second segment renders and can be inspected
+
+PHASE 2: FACTORY MODEL PROOF (Weeks 4-5)
+- Use off-the-shelf VLM (Claude, GPT-4V, or open LLaVA)
+- NO fine-tuning yet
+- Feed: script + raw footage + previous context
+- Model outputs: structured edits
+- Measure baseline: % of edits that work on first try
+- Example: "factory model gets 40% of edits right"
+- Document what breaks and why
+
+PHASE 3: YOUTUBE SHORTS TRAINING DATA (Weeks 6-7)
+- Collect 500-1000 YouTube Shorts examples
+- Scrape transcripts + basic metadata
+- Annotate: what editing decisions are made and when
+- Build lightweight training dataset
+- Goal: have ground truth for "good editing" from real creators
+
+PHASE 4: FINE-TUNE MODEL (Week 8)
+- Take a small model (SmolVLM 2.2B or similar)
+- Fine-tune on YouTube Shorts editing patterns
+- Measure improvement vs factory baseline
+- Example: "fine-tuned model gets 75% on first try"
+
+PHASE 5: DEMO + SHIP (Weeks 9-10)
+- Record full loop: script → raw footage → AI edits → renders → fixed result
+- Show side-by-side: factory vs fine-tuned performance
+- Make it repeatable (same footage, different scripts)
+- Publish with clear before/after
+
+
+WHAT GETS MEASURED
+-------------------
+FACTORY MODEL (baseline):
+- Edit accuracy: how many commands produce expected result
+- Fix rate: how many need correction
+- Hallucination rate: how often does it invent nonexistent tools
+- Time to acceptable result: how many render passes needed
+
+FINE-TUNED MODEL (improvement):
+- Same metrics
+- Calculate delta: "improvement is +X%"
+- That delta is your proof that tuning works
+
+
+THE EDITOR: SHOTCUT
+-------------------
+Why Shotcut for MVP (not Velorn):
+- Mature and stable
+- Multitrack timeline
+- QML API exposes project/timeline structure
+- Open source
+- Can manipulate clips, tracks, filters programmatically
+- Good fallback to test the architecture
+
+Once the loop works with Shotcut, you can swap in Velorn.
+The architecture should not depend on one editor.
+
+
+MODEL OUTPUT FORMAT (critical)
+------------------------------
+The model should output structured commands, not natural language.
+
+Example:
+
+    {
+      "edits": [
+        {
+          "type": "trim",
+          "clip_id": "main_video",
+          "in": 0.5,
+          "out": 8.2,
+          "reason": "remove setup dead time, start with action"
+        },
+        {
+          "type": "add_transition",
+          "from_clip": "main_video",
+          "to_clip": "b_roll_1",
+          "duration": 0.3,
+          "style": "crossfade",
+          "reason": "smooth cut to supporting visual"
+        },
+        {
+          "type": "add_text",
+          "text": "punchline",
+          "at": 3.5,
+          "duration": 1.5,
+          "reason": "emphasize the joke"
+        }
+      ],
+      "reasoning": "Script says emphasize punchline at 3.5s with quick cuts. Trimmed dead time, added transition for flow, added text overlay for impact."
+    }
+
+This is:
+- parseable
+- executable
+- auditable (can see why each edit happened)
+- measurable (did it work?)
+
+
+THE 10-SECOND CHUNK
+-------------------
+Chunk structure:
+
+    [0-3s] Previous context (for continuity)
+    [3-11s] Current edit segment
+    [11-14s] Next context (overlap for flow)
+
+The model sees the full 14 seconds but mainly edits the middle 8.
+
+This prevents:
+- discontinuity at boundaries
+- cutting off jokes/dialogue
+- breaking visual motion
+
+
+INSPECTION / OBSERVATION PIPELINE
+----------------------------------
+After render:
+
+1. Extract frames at 2 FPS (~4 frames per 8 seconds)
+2. Generate transcript from audio
+3. Identify key moments:
+   - cuts/transitions
+   - text on screen
+   - speaker changes
+   - music/sound changes
+4. Compare to INTENDED state:
+   - intended: "punchline at 3.5s with reaction cut"
+   - actual: "punchline plays at 4.1s, reaction cut is delayed"
+   - discrepancy: "off by 0.6s"
+5. Pass discrepancy back to model for correction
+
+The model sees:
+- what was supposed to happen (from script)
+- what actually happened (from inspection)
+- what needs to change (the delta)
+
+
+PERSISTENT PROJECT STATE
+------------------------
+Keep a simple JSON file:
+
+    {
+      "script": "...",
+      "raw_footage": [...],
+      "timeline_state": {...},
+      "current_segment": "0-8s",
+      "previous_renders": [...],
+      "corrections_needed": [...],
+      "accepted_segments": [...]
+    }
+
+This is NOT memory. It's just "what do we know right now about this project?"
+It lets you resume if interrupted.
+
+
+METRICS FOR SUCCESS
+-------------------
+MVP Success:
+- One 10-second example runs start-to-finish
+- Model makes at least 3 real editing decisions
+- At least 1 decision requires a correction loop
+- Final result is noticeably different (better) than raw footage
+- Time: under 5 minutes total (render + inspect + fix)
+
+Demo Success:
+- Publish video showing:
+  - raw footage (10s)
+  - script (2 sentences)
+  - AI editing process (time-lapse)
+  - final result (10s)
+  - side-by-side comparison
+- Include metrics: "factory: 40% first-try accuracy, fine-tuned: 75%"
+- Reproducible with different footage
+
+
+WHAT NOT TO BUILD YET
+---------------------
+DO NOT BUILD:
+- Full project memory system
+- Multi-hour video editing
+- Macro review (full video pass)
+- Asset library TUI
+- Multi-editor support
+- Cloud infrastructure
+- GPU scheduling
+- Training from scratch
+- Perfect error handling
+
+BUILD ONLY:
+- One loop
+- One editor
+- One task
+- Measurement
+- Demo
+
+
+GITHUB / CODE STRUCTURE
+-----------------------
+Suggested layout:
+
+    /monkey
+    ├── mvp/
+    │   ├── editor/
+    │   │   └── shotcut_api.py (wrapper around Shotcut)
+    │   ├── inspection/
+    │   │   ├── frame_sampler.py
+    │   │   ├── transcript.py
+    ��   │   └── comparison.py
+    │   ├── render/
+    │   │   └── render_segment.py
+    │   ├── model/
+    │   │   ├── factory_model.py (Claude/GPT-4V wrapper)
+    │   │   └── fine_tune_dataset.py
+    │   ├── loop.py (main orchestration)
+    │   ├── state.json (project state)
+    │   └── demo.py (record the whole thing)
+    ├── training/
+    │   ├── youtube_scraper.py
+    │   ├── annotation_tool.py
+    │   └── fine_tune.py
+    ├── README.md (what this is)
+    └── RESULTS.md (metrics from each run)
+
+
+NEXT IMMEDIATE STEPS
+--------------------
+1. Pick the editor (Shotcut)
+2. Write ONE wrapper function: input script + clip → outputs structured edits
+3. Write ONE render function: take edits → render 8s segment
+4. Write ONE inspect function: rendered segment → frames + transcript
+5. Wire them together
+6. Run on one example
+7. Measure what breaks
+8. Iterate
+
+Do not optimize. Do not generalize. Do not think about scale.
+Just make one thing work.
+
+
+FUNDING / PARTNERSHIP ANGLE
+---------------------------
+When you have the demo:
+
+"AI edited this 10-second video from raw footage using only a script.
+Factory model: 40% accuracy first try.
+Fine-tuned on YouTube Shorts: 75% accuracy first try.
+Improvement is measurable and reproducible."
+
+That's a story. That's interesting.
+
+People fund things that work and can be measured.
+This is both.
+
+
+NORTH STAR (still relevant)
+---------------------------
+The original big document outlined:
+- multi-GPU cloud setup
+- full project memory
+- macro + micro + local review
+- complete asset library
+- Velorn integration
+
+That is the LONG TERM vision (6-12 months out).
+
+This 10-second MVP is the IMMEDIATE PROOF (8 weeks).
+
+They are not in conflict. The MVP proves the core loop works.
+The vision shows where it goes next.
+
+The MVP is the door. The vision is the house.
+Build the door first.
